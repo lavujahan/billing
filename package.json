@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "create-user": "tsx --env-file=.env.local scripts/create-user.ts",
     "db:link": "supabase link",
     "db:push": "supabase db push"

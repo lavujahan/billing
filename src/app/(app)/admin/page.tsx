@@ -19,7 +19,7 @@ export default async function AdminHomePage() {
           >
             <span className="text-[15px] font-semibold">{item.label}</span>
             <span className="text-xs text-ink-muted">
-              {item.ta} · {"ready" in item ? `${userCount ?? 0} users` : "coming soon"}
+              {item.ta} · {item.href === "/admin/users" ? `${userCount ?? 0} users` : "ready" in item ? "open" : "coming soon"}
             </span>
           </Link>
         ))}

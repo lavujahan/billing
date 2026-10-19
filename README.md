@@ -6,7 +6,12 @@ A Tamil-first, mobile-first web app for small-business billing, purchases, expen
 - **UI reference:** the [Billing Voice Form canvas](https://claude.ai/artifact/FG6ahqjt6nijdQiUJNtd33)
 - **Rules for contributors:** [CLAUDE.md](CLAUDE.md)
 
-**Status: Foundation phase.** Login, the Home dashboard shell, the admin area with Users, the shared database tables, RLS and storage buckets are in place. The Billing, Purchase, Expense, Collection and Reports screens are placeholders.
+**Status: Phase 2 (Billing by typing).**
+- **Done:** login, Home, and the admin area (users, items, customers, business profile).
+- **Billing:** today's bills with drafts, and the bill form with autosaved drafts and live GST totals. Saving assigns the next number. Bills open in a view where they can be edited or cancelled, and each has a GST invoice print page (A4 or thermal; save as PDF from the browser).
+- **Not built yet:** voice entry (Phase 3), Purchase, Expense, Collection and Reports.
+
+Run `npm test` for the GST and totals unit tests.
 
 ## Stack
 - Next.js 16 (App Router, Server Actions)

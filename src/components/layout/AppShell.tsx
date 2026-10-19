@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { isAdminRole, type CurrentUser } from "@/lib/auth/session";
 import { BottomNav } from "./BottomNav";
+import { PhoneChromeGate } from "./PhoneChromeGate";
 import { SideNav } from "./SideNav";
 import { TopBar } from "./TopBar";
 
@@ -28,11 +29,13 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
     <div className="flex min-h-dvh">
       <SideNav businessName={user.businessName} showAdmin={isAdminRole(user.role)} />
       <div className="flex min-w-0 grow flex-col">
-        <TopBar
-          greeting={`வணக்கம், ${firstName} · ${todayLabel()}`}
-          businessName={user.businessName}
-          initials={initialsOf(user.businessName) || "•"}
-        />
+        <PhoneChromeGate>
+          <TopBar
+            greeting={`வணக்கம், ${firstName} · ${todayLabel()}`}
+            businessName={user.businessName}
+            initials={initialsOf(user.businessName) || "•"}
+          />
+        </PhoneChromeGate>
         <main className="grow pb-28 sm:pb-8">{children}</main>
       </div>
       <BottomNav />

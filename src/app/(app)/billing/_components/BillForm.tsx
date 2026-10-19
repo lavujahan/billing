@@ -1,0 +1,510 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ProductHit } from "@/app/api/search/products/route";
+import { BackIcon } from "@/components/icons";
+import { ChoicePills } from "@/components/form/ChoicePills";
+import { fetchJson, SearchPicker } from "@/components/form/SearchPicker";
+import { clearDeviceCopy, readDeviceCopy, useAutosave } from "@/components/form/useAutosave";
+import { computeTotals } from "@/lib/billing/totals";
+import type { BillCustomer, BillDraft, BillingContext, BillLine, PaymentStatus } from "@/lib/billing/types";
+import { validateBill } from "@/lib/billing/validate";
+import { formatDate, formatINR } from "@/lib/money";
+import { discardDraftAction, saveDraftAction } from "../actions";
+import { SaveSummary } from "./SaveSummary";
+
+type CustomerHit = BillCustomer & { nameTa: string | null; phone: string | null };
+
+type Props = {
+  businessName: string;
+  ctx: BillingContext;
+  initial: BillDraft;
+  draftId: string | null;
+  edit?: { invoiceId: string; invoiceNo: string; updatedAt: string };
+};
+
+const NEW_KEY = "bill-draft:new";
+
+const fieldBox = "flex flex-col rounded-field border px-2.5 py-1.5";
+const numberInput = "w-full bg-transparent text-[15px] font-semibold outline-none";
+
+export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, edit }: Props) {
+  const router = useRouter();
+  const [draft, setDraft] = useState<BillDraft>(initial);
+  const [draftId, setDraftId] = useState(initialDraftId);
+  const [showErrors, setShowErrors] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [addingItem, setAddingItem] = useState(initial.lines.length === 0 && initial.customer !== null);
+  const [restorable, setRestorable] = useState<{ value: BillDraft; at: number } | null>(null);
+  const offerRestore = !edit && !initialDraftId && !initial.customer;
+
+  useEffect(() => {
+    if (!offerRestore) return;
+    // localStorage only exists in the browser, so read it after hydration.
+    const timer = setTimeout(() => {
+      const copy = readDeviceCopy<BillDraft>(NEW_KEY);
+      if (copy && (copy.value.customer || copy.value.lines.length)) setRestorable(copy);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [offerRestore]);
+  const qtyRefs = useRef(new Map<string, HTMLInputElement>());
+  const focusLine = useRef<string | null>(null);
+
+  const totals = useMemo(() => computeTotals(draft, ctx.businessStateCode), [draft, ctx.businessStateCode]);
+  const validation = useMemo(() => validateBill(draft, totals, ctx), [draft, totals, ctx]);
+  const touched = Boolean(draft.customer || draft.lines.length);
+  const storageKey = draftId ? `bill-draft:${draftId}` : NEW_KEY;
+
+  const autosave = useAutosave({
+    value: draft,
+    enabled: !edit && !saved && touched,
+    storageKey,
+    save: useCallback(
+      async (value: BillDraft) => {
+        const res = await saveDraftAction({ id: draftId, draft: value, title: value.customer?.name ?? "", amount: totals.total });
+        if (!res.ok) return false;
+        if (res.id !== draftId) {
+          clearDeviceCopy(NEW_KEY);
+          setDraftId(res.id);
+          window.history.replaceState(null, "", `/billing/new?draft=${res.id}`);
+        }
+        return true;
+      },
+      [draftId, totals.total],
+    ),
+  });
+
+  useEffect(() => {
+    if (focusLine.current) {
+      qtyRefs.current.get(focusLine.current)?.select();
+      focusLine.current = null;
+    }
+  }, [draft.lines.length]);
+
+  const update = (patch: Partial<BillDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const updateLine = (key: string, patch: Partial<BillLine>) =>
+    setDraft((d) => ({ ...d, lines: d.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
+
+  const issueFor = (field: string) =>
+    (showErrors ? validation.blocking.find((i) => i.field === field) : undefined) ?? validation.warnings.find((i) => i.field === field);
+  const isBlocking = (field: string) => showErrors && validation.blocking.some((i) => i.field === field);
+
+  async function priceFor(productId: string, customerId: string | null | undefined) {
+    const params = new URLSearchParams({ product: productId, ...(customerId ? { customer: customerId } : {}) });
+    return fetchJson<{ rate: number | null; usualRate: number | null }>(`/api/billing/price?${params}`).catch(() => ({
+      rate: null,
+      usualRate: null,
+    }));
+  }
+
+  async function addProduct(p: ProductHit) {
+    const key = crypto.randomUUID();
+    const price = await priceFor(p.id, draft.customer?.id);
+    focusLine.current = key;
+    setDraft((d) => ({
+      ...d,
+      lines: [
+        ...d.lines,
+        {
+          key,
+          productId: p.id,
+          name: p.name,
+          nameTa: p.nameTa,
+          unit: p.unit,
+          hsn: p.hsn,
+          gstRate: p.gstRate,
+          qty: "1",
+          rate: price.rate === null ? "" : String(price.rate),
+          usualRate: price.usualRate,
+        },
+      ],
+    }));
+    setAddingItem(false);
+  }
+
+  async function setCustomer(c: BillCustomer | null) {
+    update({ customer: c });
+    if (!c?.id) return;
+    const prices = await Promise.all(draft.lines.map((l) => priceFor(l.productId, c.id)));
+    setDraft((d) => ({ ...d, lines: d.lines.map((l, i) => ({ ...l, usualRate: prices[i]?.usualRate ?? null })) }));
+  }
+
+  function trySave() {
+    setShowErrors(true);
+    const first = validation.blocking[0];
+    if (first) {
+      document.querySelector(`[data-field="${first.field}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setSummaryOpen(true);
+  }
+
+  async function discard() {
+    if (!confirm("Discard this draft bill? · இந்த draft-ஐ நீக்கவா?")) return;
+    clearDeviceCopy(storageKey);
+    if (draftId) await discardDraftAction(draftId);
+    router.push("/billing");
+  }
+
+  const canSave = Boolean(draft.customer && draft.lines.length);
+  const statusText = edit
+    ? `Editing ${edit.invoiceNo}`
+    : { idle: "Draft", saving: "Saving draft…", saved: "Draft saved ✓", device: "Saved on this device" }[autosave];
+
+  return (
+    <div className="flex min-h-dvh flex-col sm:min-h-0">
+      <header className="sticky top-0 z-10 flex items-center sm:static gap-2 border-b border-outline bg-surface py-3 pr-3 pl-2">
+        <Link href={edit ? `/billing/${edit.invoiceId}` : "/billing"} aria-label="Back" className="flex h-11 w-11 items-center justify-center text-ink">
+          <BackIcon />
+        </Link>
+        <div className="flex min-w-0 grow flex-col">
+          <h1 className="truncate text-lg font-bold">{edit ? "Edit bill · பில் திருத்தம்" : "New bill · புது பில்"}</h1>
+          <span className="text-[13px] text-ink-muted" aria-live="polite">
+            {statusText} · {formatDate(draft.invoiceDate)}
+          </span>
+        </div>
+        {!edit && touched && (
+          <button type="button" onClick={discard} className="min-h-9 rounded-full border border-chip-border px-3 text-[13px] font-semibold text-ink-muted">
+            Discard
+          </button>
+        )}
+      </header>
+
+      <div className="mx-auto flex w-full max-w-[720px] grow flex-col gap-3 px-4 py-3.5 pb-32">
+        {restorable && (
+          <div role="status" className="flex flex-wrap items-center gap-2 rounded-card border-[1.5px] border-voice bg-warning-container px-4 py-3">
+            <span className="grow text-sm text-warning-text">
+              Unsaved bill on this phone from {new Date(restorable.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <button type="button" className="min-h-9 rounded-full bg-primary px-3 text-sm font-bold text-white" onClick={() => { setDraft(restorable.value); setRestorable(null); }}>
+              Restore
+            </button>
+            <button type="button" className="min-h-9 px-2 text-sm text-ink-muted" onClick={() => { clearDeviceCopy(NEW_KEY); setRestorable(null); }}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Customer */}
+        <section data-field="customer" className={`rounded-card border bg-surface py-3 pr-3 pl-4 ${isBlocking("customer") ? "border-[1.5px] border-voice" : "border-outline"}`}>
+          {draft.customer ? (
+            <div className="flex items-center gap-3">
+              <div className="flex min-w-0 grow flex-col gap-0.5">
+                <span className="text-xs text-ink-muted">Customer · வாடிக்கையாளர்</span>
+                <span className="text-[17px] font-semibold">
+                  {draft.customer.name}
+                  {!draft.customer.id && <span className="ml-2 rounded-full bg-primary-container px-2 py-0.5 text-xs font-semibold text-primary-strong">New customer</span>}
+                </span>
+                {draft.customer.balance > 0 && <span className="text-xs text-warning-text">Balance due {formatINR(draft.customer.balance)}</span>}
+                {draft.customer.id && draft.customer.gstin && <span className="text-xs text-ink-muted">GSTIN {draft.customer.gstin}</span>}
+              </div>
+              <button type="button" onClick={() => setCustomer(null)} className="min-h-11 shrink-0 rounded-full border border-primary-outline px-3 text-sm font-semibold text-primary">
+                Change
+              </button>
+            </div>
+          ) : (
+            <SearchPicker<CustomerHit | { id: null; name: string }>
+              label="Customer · வாடிக்கையாளர்"
+              placeholder="Search name or phone"
+              autoFocus={!edit}
+              search={(q, signal) => fetchJson<CustomerHit[]>(`/api/search/customers?q=${encodeURIComponent(q)}`, signal)}
+              render={(c) => ({
+                key: c.id ?? "new",
+                value: c,
+                label: (
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span className="flex flex-col">
+                      <span className="font-semibold">{c.name}</span>
+                      {"phone" in c && c.phone && <span className="text-xs text-ink-muted">{c.phone}</span>}
+                    </span>
+                    {"balance" in c && c.balance > 0 && <span className="text-xs text-warning-text">{formatINR(c.balance)} due</span>}
+                  </span>
+                ),
+              })}
+              extraOptions={(q) => [
+                ...(q ? [{ key: "new", value: { id: null, name: q }, label: <span className="font-semibold text-primary">+ New customer “{q}”</span> }] : []),
+                { key: "cash", value: { id: null, name: "Cash" }, label: <span className="text-ink-muted">Cash sale · ரொக்க விற்பனை</span> },
+              ]}
+              onPick={(c) =>
+                setCustomer(
+                  c.id === null
+                    ? { id: null, name: c.name, gstin: null, stateCode: null, balance: 0, creditLimit: null }
+                    : { id: c.id, name: c.name, gstin: c.gstin, stateCode: c.stateCode, balance: c.balance, creditLimit: c.creditLimit },
+                )
+              }
+            />
+          )}
+          {draft.customer && !draft.customer.id && draft.customer.name.toLowerCase() !== "cash" && (
+            <label className="mt-3 flex flex-col gap-1" data-field="gstin">
+              <span className="text-xs text-ink-muted">Customer GSTIN (optional)</span>
+              <input
+                value={draft.customer.gstin ?? ""}
+                maxLength={15}
+                autoCapitalize="characters"
+                onChange={(e) => update({ customer: { ...draft.customer!, gstin: e.target.value.toUpperCase() || null } })}
+                className={`min-h-11 rounded-field border px-3 font-semibold tracking-wide uppercase outline-none focus:border-2 focus:border-primary ${issueFor("gstin") ? "border-voice bg-warning-container" : "border-outline"}`}
+              />
+              {issueFor("gstin") && <span className="text-xs text-warning-text">{issueFor("gstin")!.message}</span>}
+            </label>
+          )}
+          {issueFor("customer") && <p className="mt-2 text-xs text-warning-text">{issueFor("customer")!.message}</p>}
+        </section>
+
+        {/* Items */}
+        <div className="flex items-baseline justify-between" data-field="lines">
+          <h2 className="text-sm font-bold">Items · பொருட்கள் ({draft.lines.length})</h2>
+          <span className="text-xs text-ink-muted">Tap a field to type</span>
+        </div>
+        {isBlocking("lines") && <p className="text-xs text-warning-text">{issueFor("lines")!.message}</p>}
+
+        {draft.lines.map((l, i) => {
+          const t = totals.lines[i];
+          const rateIssue = issueFor(`line.${l.key}.rate`);
+          const qtyIssue = isBlocking(`line.${l.key}.qty`);
+          const flagged = Boolean(rateIssue || qtyIssue);
+          return (
+            <section
+              key={l.key}
+              data-field={`line.${l.key}.rate`}
+              className={`flex flex-col gap-2.5 rounded-card bg-surface py-3 pr-3 pl-4 ${flagged ? "border-[1.5px] border-voice" : "border border-outline"}`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex min-w-0 grow flex-col">
+                  <span className="text-base font-semibold">{l.name}</span>
+                  <span className="text-xs text-ink-muted">
+                    {l.nameTa ? `${l.nameTa} · ` : ""}GST {l.gstRate}%
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Remove ${l.name}`}
+                  onClick={() => update({ lines: draft.lines.filter((x) => x.key !== l.key) })}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl text-ink-muted"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <label data-field={`line.${l.key}.qty`} className={`${fieldBox} ${qtyIssue ? "border-[1.5px] border-voice bg-warning-container" : "border-outline"}`}>
+                  <span className="text-[11px] text-ink-muted">Qty{l.unit ? ` (${l.unit})` : ""}</span>
+                  <input
+                    ref={(el) => {
+                      if (el) qtyRefs.current.set(l.key, el);
+                      else qtyRefs.current.delete(l.key);
+                    }}
+                    inputMode="decimal"
+                    value={l.qty}
+                    onChange={(e) => updateLine(l.key, { qty: e.target.value })}
+                    className={numberInput}
+                  />
+                </label>
+                <label className={`${fieldBox} ${rateIssue ? "border-[1.5px] border-voice bg-warning-container" : "border-outline"}`}>
+                  <span className={`text-[11px] ${rateIssue ? "text-warning-text" : "text-ink-muted"}`}>Rate{rateIssue ? " · check" : ""}</span>
+                  <span className="flex items-baseline">
+                    <span className="text-[15px] font-semibold">₹</span>
+                    <input inputMode="decimal" value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} className={numberInput} />
+                  </span>
+                </label>
+                <div className="flex flex-col rounded-field bg-background px-2.5 py-1.5">
+                  <span className="text-[11px] text-ink-muted">Amount</span>
+                  <span className="text-[15px] font-semibold">{formatINR(t?.gross ?? 0)}</span>
+                </div>
+              </div>
+              {rateIssue && <span className="text-xs text-warning-text">{rateIssue.message}</span>}
+              {issueFor(`line.${l.key}.gst`) && <span className="text-xs text-warning-text">{issueFor(`line.${l.key}.gst`)!.message}</span>}
+            </section>
+          );
+        })}
+
+        {addingItem ? (
+          <div className="rounded-card border border-outline bg-surface p-3">
+            <SearchPicker<ProductHit>
+              label="Item · பொருள்"
+              placeholder="Search item, Tamil name or alias"
+              autoFocus
+              search={(q, signal) => fetchJson<ProductHit[]>(`/api/search/products?q=${encodeURIComponent(q)}`, signal)}
+              render={(p) => ({
+                key: p.id,
+                value: p,
+                label: (
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span className="flex flex-col">
+                      <span className="font-semibold">{p.name}</span>
+                      <span className="text-xs text-ink-muted">
+                        {p.nameTa ? `${p.nameTa} · ` : ""}GST {p.gstRate}%{p.unit ? ` · ${p.unit}` : ""}
+                      </span>
+                    </span>
+                    {p.defaultRate !== null && <span className="text-sm text-ink-muted">{formatINR(p.defaultRate)}</span>}
+                  </span>
+                ),
+              })}
+              emptyText="Not in the item list — ask your admin to add it · admin-இடம் சேர்க்கச் சொல்லுங்கள்"
+              onPick={addProduct}
+            />
+            <button type="button" onClick={() => setAddingItem(false)} className="mt-2 min-h-11 text-sm font-semibold text-ink-muted">
+              Close
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingItem(true)}
+            className="min-h-11 rounded-xl border-[1.5px] border-dashed border-primary-outline text-sm font-semibold text-primary"
+          >
+            + Add item · இன்னொரு item
+          </button>
+        )}
+
+        {/* Options */}
+        <section className="flex flex-col gap-3 rounded-card border border-outline bg-surface px-4 py-3">
+          <label className="flex min-h-11 items-center justify-between gap-3">
+            <span className="text-sm">Rates include GST · GST சேர்த்து</span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={draft.rateIncludesGst}
+              onChange={(e) => update({ rateIncludesGst: e.target.checked })}
+              className="h-6 w-11 accent-[var(--color-primary)]"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1" data-field="invoiceDate">
+              <span className="text-xs text-ink-muted">Date · தேதி</span>
+              <input
+                type="date"
+                value={draft.invoiceDate}
+                max={ctx.today}
+                onChange={(e) => update({ invoiceDate: e.target.value })}
+                className={`min-h-11 rounded-field border px-2 outline-none focus:border-2 focus:border-primary ${issueFor("invoiceDate") ? "border-voice bg-warning-container" : "border-outline"}`}
+              />
+            </label>
+            <div className="flex flex-col gap-1" data-field="discount">
+              <span className="text-xs text-ink-muted" id="discount-label">
+                Discount · தள்ளுபடி
+              </span>
+              <div className={`flex min-h-11 items-center rounded-field border ${isBlocking("discount") ? "border-voice bg-warning-container" : "border-outline"}`}>
+                <input
+                  aria-labelledby="discount-label"
+                  inputMode="decimal"
+                  value={draft.discount}
+                  onChange={(e) => update({ discount: e.target.value })}
+                  placeholder="0"
+                  className="w-full min-w-0 bg-transparent px-2 font-semibold outline-none"
+                />
+                <button
+                  type="button"
+                  aria-label={draft.discountMode === "amount" ? "Discount in rupees; switch to percent" : "Discount in percent; switch to rupees"}
+                  onClick={() => update({ discountMode: draft.discountMode === "amount" ? "percent" : "amount" })}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center font-bold text-primary"
+                >
+                  {draft.discountMode === "amount" ? "₹" : "%"}
+                </button>
+              </div>
+            </div>
+          </div>
+          {[issueFor("invoiceDate"), isBlocking("discount") ? issueFor("discount") : undefined]
+            .filter(Boolean)
+            .map((i) => (
+              <span key={i!.field} className="text-xs text-warning-text">
+                {i!.message}
+              </span>
+            ))}
+        </section>
+
+        {/* Totals */}
+        <section className="flex flex-col gap-1.5 rounded-card border border-outline bg-surface px-4 py-3">
+          {totals.discount > 0 && <TotalRow label="Discount" value={`−${formatINR(totals.discount, { fixed: true })}`} />}
+          <TotalRow label="Taxable" value={formatINR(totals.taxable, { fixed: true })} />
+          {totals.interState ? (
+            <TotalRow label="IGST" value={formatINR(totals.igst, { fixed: true })} />
+          ) : (
+            <TotalRow label="CGST + SGST" value={formatINR(totals.cgst + totals.sgst, { fixed: true })} />
+          )}
+          {totals.roundOff !== 0 && <TotalRow label="Round off" value={formatINR(totals.roundOff, { fixed: true })} />}
+          <div className="flex items-baseline justify-between border-t border-outline pt-1.5">
+            <span className="text-[15px] font-bold">Total · மொத்தம்</span>
+            <span className="text-[22px] font-bold">{formatINR(totals.total)}</span>
+          </div>
+        </section>
+
+        {/* Payment */}
+        <div className="flex flex-col gap-2" data-field="amountReceived">
+          <ChoicePills<PaymentStatus>
+            label="Payment"
+            value={draft.payment}
+            onChange={(payment) => update({ payment })}
+            options={[
+              { value: "paid", label: "Cash" },
+              { value: "credit", label: "Credit" },
+              { value: "partial", label: "Partial" },
+            ]}
+          />
+          {draft.payment === "partial" && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-ink-muted">Amount paid now · இப்போ கொடுத்தது</span>
+              <input
+                inputMode="decimal"
+                value={draft.amountReceived}
+                onChange={(e) => update({ amountReceived: e.target.value })}
+                className={`min-h-11 rounded-field border bg-surface px-3 font-semibold outline-none focus:border-2 focus:border-primary ${isBlocking("amountReceived") ? "border-voice bg-warning-container" : "border-outline"}`}
+              />
+              {isBlocking("amountReceived") && <span className="text-xs text-warning-text">{issueFor("amountReceived")!.message}</span>}
+            </label>
+          )}
+        </div>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Notes (printed on the bill)</span>
+          <textarea
+            value={draft.notes}
+            rows={2}
+            maxLength={1000}
+            onChange={(e) => update({ notes: e.target.value })}
+            className="rounded-field border border-outline bg-surface px-3 py-2 outline-none focus:border-2 focus:border-primary"
+          />
+        </label>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-outline bg-surface px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))] sm:sticky sm:pb-3">
+        <div className="mx-auto flex max-w-[720px] items-center gap-3">
+          <button
+            type="button"
+            onClick={trySave}
+            disabled={!canSave}
+            className="min-h-[52px] grow rounded-card bg-primary text-base font-bold text-white disabled:opacity-50"
+          >
+            {edit ? "Save changes · சேமி" : "Save · சேமி"}
+          </button>
+        </div>
+      </div>
+
+      <SaveSummary
+        businessName={businessName}
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        draft={draft}
+        totals={totals}
+        warnings={validation.warnings}
+        draftId={draftId}
+        edit={edit}
+        onSaved={() => {
+          setSaved(true);
+          clearDeviceCopy(storageKey);
+          clearDeviceCopy(NEW_KEY);
+        }}
+      />
+    </div>
+  );
+}
+
+function TotalRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between text-[13px] text-ink-muted">
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}

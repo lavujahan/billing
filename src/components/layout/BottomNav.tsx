@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MAIN_NAV, isActive } from "@/lib/nav";
+import { MAIN_NAV, isActive, isFormRoute } from "@/lib/nav";
 import { NavIcon } from "./NavIcon";
 
 export function BottomNav() {
   const pathname = usePathname();
+  if (isFormRoute(pathname)) return null;
   return (
     <nav
       aria-label="Main"
