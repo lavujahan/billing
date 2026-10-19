@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  --color-background: #f6f5f1;
+  --color-surface: #ffffff;
+  --color-outline: #e6e3db;
+  --color-text-primary: #1b1d1f;
+  --color-text-secondary: #5b5f63;
+  --color-primary: #0f6e66;
+  --color-primary-container: #e8f3f1;
+  --color-primary-strong: #0a4f49;
+  --color-primary-outline: #cfe3e0;
+  --color-divider: #efece5;
+  --color-chip-border: #d6d2c8;
+  --color-voice: #d97706;
+  --color-warning-container: #fff7e8;
+  --color-warning-text: #8a4b0f;
+  --color-danger: #b42318;
+}
+
+@theme inline {
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-outline: var(--color-outline);
+  --color-ink: var(--color-text-primary);
+  --color-ink-muted: var(--color-text-secondary);
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-primary-strong: var(--color-primary-strong);
+  --color-primary-outline: var(--color-primary-outline);
+  --color-divider: var(--color-divider);
+  --color-chip-border: var(--color-chip-border);
+  --color-voice: var(--color-voice);
+  --color-warning-container: var(--color-warning-container);
+  --color-warning-text: var(--color-warning-text);
+  --color-danger: var(--color-danger);
+  --radius-card: 14px;
+  --radius-field: 10px;
+  --font-sans: var(--font-hanken), var(--font-tamil), system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+}
