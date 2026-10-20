@@ -8,7 +8,7 @@ import { BackIcon } from "@/components/icons";
 import { ChoicePills } from "@/components/form/ChoicePills";
 import { fetchJson, SearchPicker } from "@/components/form/SearchPicker";
 import { clearDeviceCopy, readDeviceCopy, useAutosave } from "@/components/form/useAutosave";
-import { FieldMic } from "@/components/voice/FieldMic";
+import { FieldMic, type VoiceJobs } from "@/components/voice/FieldMic";
 import { HoldToSpeak } from "@/components/voice/HoldToSpeak";
 import { postAudio, type Recording } from "@/components/voice/useRecorder";
 import { applyVoicePatch, type ApplyResult, type TypedField } from "@/lib/billing/apply-patch";
@@ -68,7 +68,9 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   const [restorable, setRestorable] = useState<{ value: BillDraft; at: number } | null>(null);
   const [undoStack, setUndoStack] = useState<BillDraft[]>([]);
   const [customerChoice, setCustomerChoice] = useState<ApplyResult["customerChoice"]>(null);
-  const [productChoices, setProductChoices] = useState<{ id: string; spoken: string; candidates: ProductHit[]; qty: number | null }[]>([]);
+  // One row per item recording still being processed, so the next item can be spoken meanwhile.
+  const [voiceItems, setVoiceItems] = useState<{ id: string; heard: string | null; problem: string | null }[]>([]);
+  const [productChoices, setProductChoices] =useState<{ id: string; spoken: string; candidates: ProductHit[]; qty: number | null }[]>([]);
   const [unmatched, setUnmatched] = useState<ApplyResult["unmatched"]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [voiceStatus, setVoiceStatus] = useState<{ kind: "busy" } | { kind: "done"; transcript: string; chips: string[] } | { kind: "error"; message: string } | null>(null);
@@ -224,19 +226,26 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
       pieces = [splitItemUtterance(text)];
       found = [await searchByVoice<ProductHit>("products", pieces[0]!.itemText)];
     }
-    let problem: string | undefined;
+    // Unmatched items land in the "Not in the item list" card, so no problem is returned for them.
     for (const [i, { itemText, qty }] of pieces.entries()) {
       const candidates = found[i]!;
       const pick = confidentPick(candidates);
       if (pick) await addProduct(pick, true, qty);
       else if (candidates.length) setProductChoices((c) => [...c, { id: crypto.randomUUID(), spoken: itemText, candidates, qty }]);
-      else {
-        setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
-        problem = "Not in the item list · item list-ல இல்லை";
-      }
+      else setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
     }
-    return problem;
   }
+
+  const removeVoiceItem = (id: string) => setVoiceItems((v) => v.filter((x) => x.id !== id));
+  const itemJobs: VoiceJobs = {
+    onStart: (id) => setVoiceItems((v) => [...v, { id, heard: null, problem: null }]),
+    onHeard: (id, heard) => setVoiceItems((v) => v.map((x) => (x.id === id ? { ...x, heard } : x))),
+    onEnd: (id, problem) => {
+      if (!problem) return removeVoiceItem(id);
+      setVoiceItems((v) => v.map((x) => (x.id === id ? { ...x, problem } : x)));
+      setTimeout(() => removeVoiceItem(id), 5000);
+    },
+  };
 
   function onLineVoice(key: string) {
     return (text: string) => {
@@ -552,6 +561,28 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
           );
         })}
 
+        {voiceItems.map((v) =>
+          v.problem ? (
+            <div key={v.id} role="status" className="flex items-center gap-2 rounded-card border-[1.5px] border-voice bg-warning-container py-2 pr-1 pl-4">
+              <span className="flex min-w-0 grow flex-col">
+                {v.heard && <span className="truncate text-sm">“{v.heard}”</span>}
+                <span className="text-xs text-warning-text">{v.problem}</span>
+              </span>
+              <button type="button" onClick={() => removeVoiceItem(v.id)} aria-label="Dismiss" className="flex h-11 w-11 shrink-0 items-center justify-center text-lg text-ink-muted">
+                ×
+              </button>
+            </div>
+          ) : (
+            <div key={v.id} role="status" className="flex min-h-[60px] items-center gap-3 rounded-card border border-dashed border-primary-outline bg-surface py-3 pr-3 pl-4">
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden="true" />
+              <span className="flex min-w-0 flex-col">
+                <span className={`truncate text-base ${v.heard ? "font-semibold" : "text-ink-muted"}`}>{v.heard ? `“${v.heard}”` : "Processing… · புரிந்துகொள்கிறது"}</span>
+                <span className="text-xs text-ink-muted">{v.heard ? "Adding item… · சேர்க்கிறது" : "Say the next item below meanwhile"}</span>
+              </span>
+            </div>
+          ),
+        )}
+
         {productChoices.map((choice) => {
           const dismiss = () => setProductChoices((c) => c.filter((x) => x.id !== choice.id));
           return (
@@ -598,7 +629,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
             <div className="flex items-end gap-2">
               <div className="grow">
                 <SearchPicker<ProductHit>
-                  label="Item · பொருள்"
+                  label={draft.lines.length || voiceItems.length ? "Next item · அடுத்த பொருள்" : "Item · பொருள்"}
                   placeholder="Search item, Tamil name or alias"
                   autoFocus={!voiceEnabled}
                   search={(q, signal) => fetchJson<ProductHit[]>(`/api/search/products?q=${encodeURIComponent(q)}`, signal)}
@@ -621,7 +652,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
                   onPick={(p) => addProduct(p)}
                 />
               </div>
-              {mic(<FieldMic kind="product" label="item" parallel onText={onProductVoice} />)}
+              {mic(<FieldMic kind="product" label="item" parallel={itemJobs} onText={onProductVoice} />)}
             </div>
             <button type="button" onClick={() => setAddingItem(false)} className="mt-2 min-h-11 text-sm font-semibold text-ink-muted">
               Close
