@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/session";
 import { isValidGstin, normalizeGstin, STATES } from "@/lib/billing/gst";
 import { createClient } from "@/lib/supabase/server";
+import { tamilToLatin } from "@/lib/voice/translit";
 
 export type FormState = { ok: boolean; message: string } | null;
 
@@ -38,7 +39,12 @@ export async function saveCustomerAction(_prev: FormState, formData: FormData): 
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]!.message };
 
   const { id, ...values } = parsed.data;
-  const row = { ...values, state_code: values.gstin ? values.gstin.slice(0, 2) : values.state_code, needs_review: false };
+  const row = {
+    ...values,
+    state_code: values.gstin ? values.gstin.slice(0, 2) : values.state_code,
+    name_latin: values.name_ta ? tamilToLatin(values.name_ta) : null,
+    needs_review: false,
+  };
   const supabase = await createClient();
   const { error } = id
     ? await supabase.from("customers").update(row).eq("id", id)

@@ -39,6 +39,7 @@ const Draft = z.object({
         qty: z.string().max(20),
         rate: z.string().max(20),
         usualRate: z.number().nullable(),
+        confidence: z.number().nullable().optional(),
       }),
     )
     .max(200),
@@ -215,6 +216,33 @@ async function withMasterValues(supabase: Awaited<ReturnType<typeof createClient
     customer = { ...customer, gstin: gstin || null, stateCode: gstin && /^\d{2}/.test(gstin) ? gstin.slice(0, 2) : null };
   }
   return { ...draft, lines, customer };
+}
+
+// ── Master requests ───────────────────────────────────────────────────────────
+
+export async function requestItemAction(input: { name: string; qty: number | null; rate: number | null; draftId: string | null }) {
+  const user = await getCurrentUser();
+  const name = input.name.trim().slice(0, 120);
+  if (!name) return { ok: false as const };
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("master_requests")
+    .select("id")
+    .eq("kind", "product")
+    .eq("status", "open")
+    .ilike("requested_name", name.replace(/[%_\\]/g, ""))
+    .maybeSingle();
+  if (existing) return { ok: true as const, already: true };
+  const { error } = await supabase.from("master_requests").insert({
+    business_id: user.businessId,
+    created_by: user.id,
+    kind: "product",
+    requested_name: name,
+    details: { qty: input.qty, rate: input.rate, module: "billing" },
+    draft_id: input.draftId && uuid.safeParse(input.draftId).success ? input.draftId : null,
+  });
+  revalidatePath("/admin/requests");
+  return error ? { ok: false as const } : { ok: true as const, already: false };
 }
 
 // ── Cancel ────────────────────────────────────────────────────────────────────

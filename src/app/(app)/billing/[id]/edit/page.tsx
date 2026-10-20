@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { resolveOpenAIKey } from "@/lib/ai/keys";
 import { requireAdmin } from "@/lib/auth/session";
 import { getBillCustomer, getBillingContext, getInvoice } from "@/lib/billing/server";
 import type { BillDraft } from "@/lib/billing/types";
@@ -16,7 +17,11 @@ export default async function EditBillPage({ params }: PageProps<"/billing/[id]/
   if (!bill) notFound();
   if (bill.status === "cancelled") redirect(`/billing/${id}`);
 
-  const [ctx, customer] = await Promise.all([getBillingContext(supabase, user.businessId), getBillCustomer(supabase, bill.customers.id)]);
+  const [ctx, customer, aiKey] = await Promise.all([
+    getBillingContext(supabase, user.businessId),
+    getBillCustomer(supabase, bill.customers.id),
+    resolveOpenAIKey(user.businessId),
+  ]);
 
   const initial: BillDraft = {
     invoiceDate: bill.invoice_date,
@@ -49,6 +54,7 @@ export default async function EditBillPage({ params }: PageProps<"/billing/[id]/
       ctx={{ ...ctx, lastInvoiceDate: null }}
       initial={initial}
       draftId={null}
+      voiceEnabled={Boolean(aiKey)}
       edit={{ invoiceId: bill.id, invoiceNo: bill.invoice_no, updatedAt: bill.updated_at }}
     />
   );

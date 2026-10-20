@@ -21,6 +21,10 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
   ]);
   const editing = typeof sp.edit === "string" ? (items ?? []).find((i) => i.id === sp.edit) ?? null : null;
   const slabs = (biz?.gst_slabs ?? [0, 5, 12, 18, 28]).map(Number);
+  const request =
+    typeof sp.request === "string" && /^[0-9a-f-]{36}$/i.test(sp.request)
+      ? { id: sp.request, name: typeof sp.name === "string" ? sp.name.slice(0, 120) : "", rate: typeof sp.rate === "string" ? sp.rate : "" }
+      : null;
 
   return (
     <Page wide>
@@ -66,7 +70,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
         </section>
         <section className="flex flex-col gap-2">
           <SectionHeading title={editing ? `Edit · ${editing.name}` : "Add item · புது பொருள்"} />
-          <ItemForm item={editing as ItemValues | null} slabs={slabs} />
+          <ItemForm item={editing as ItemValues | null} slabs={slabs} request={request} />
         </section>
       </div>
     </Page>

@@ -6,12 +6,12 @@ A Tamil-first, mobile-first web app for small-business billing, purchases, expen
 - **UI reference:** the [Billing Voice Form canvas](https://claude.ai/artifact/FG6ahqjt6nijdQiUJNtd33)
 - **Rules for contributors:** [CLAUDE.md](CLAUDE.md)
 
-**Status: Phase 2 (Billing by typing).**
-- **Done:** login, Home, and the admin area (users, items, customers, business profile).
-- **Billing:** today's bills with drafts, and the bill form with autosaved drafts and live GST totals. Saving assigns the next number. Bills open in a view where they can be edited or cancelled, and each has a GST invoice print page (A4 or thermal; save as PDF from the browser).
-- **Not built yet:** voice entry (Phase 3), Purchase, Expense, Collection and Reports.
+**Status: Phase 3 (Voice on Billing).**
+- **Done:** login, Home, and the admin area (users, items, customers, customer review, item requests, business profile, AI key).
+- **Billing:** works by typing, by voice one field at a time, or by speaking the whole bill at once. Bills open in a view where they can be edited or cancelled, and each has a GST invoice print page.
+- **Not built yet:** Purchase, Expense, Collection and Reports.
 
-Run `npm test` for the GST and totals unit tests.
+Run `npm test` for the unit tests. They cover GST totals, Tamil number parsing and the voice merge rules.
 
 ## Stack
 - Next.js 16 (App Router, Server Actions)
@@ -62,12 +62,34 @@ The user enters a mobile number and a 5-digit code. Step by step:
 
 All data access after that uses the user's session and Row Level Security. Each user only ever sees their own business's rows.
 
+## Voice and AI keys
+Voice uses OpenAI. Speech-to-text is `gpt-4o-transcribe`; whole-bill understanding is one agent run (`gpt-5.4-mini`), and you can override either in `.env.local`. With no key, the mics are hidden and typing works as usual.
+
+1. Set `AI_KEY_ENCRYPTION_KEY` in `.env.local`: 32 random bytes, base64. See `.env.local.example`. This master key encrypts stored OpenAI keys; it stays in the server environment and never goes in the database.
+2. Restart the server. Then an owner or admin opens **Admin → AI · voice settings** and pastes the OpenAI key. The key is:
+   - tested before it is saved
+   - stored AES-256-GCM encrypted
+   - never sent to any browser; only the last 4 characters are ever shown
+3. Optionally, a vendor-wide `OPENAI_API_KEY` in the environment is used for businesses that haven't added their own key.
+
+How voice works:
+- **Field voice** (the small mic on a field) sends the audio for speech-to-text only. Code then turns the words into the value: Tamil, English and Tanglish numbers, units, dates and fuzzy name matching (`src/lib/voice/`).
+- **Whole-bill voice** (hold the orange mic) runs the Billing agent once (`src/modules/billing/`).
+  - The agent only reads the masters; it can't save anything.
+  - Plain code then matches its result to your items and customers and merges it into the form. Spoken values never overwrite typed ones.
+
+**Microphones need HTTPS.** `localhost` works. To test on a phone over Wi-Fi, run `npx next dev --experimental-https` and open the https address.
+
+**Eval set:** `npm run eval:billing` runs sample bill sentences through the agent (needs `OPENAI_API_KEY`). The starter set is synthetic; replace it with real shop sentences from `src/modules/billing/evals/billing.json` before tuning the prompt.
+
 ## Scripts
 | Script | Does |
 | --- | --- |
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm run lint` / `typecheck` | ESLint / TypeScript |
 | `npm run create-user -- …` | Create a business owner or another user from the CLI |
+| `npm test` | Unit tests |
+| `npm run eval:billing` | Score the Billing agent on the eval set |
 | `npm run db:link` / `db:push` | Link the Supabase project / apply migrations |
 
 ## PWA

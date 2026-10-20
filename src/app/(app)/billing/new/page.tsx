@@ -1,3 +1,4 @@
+import { resolveOpenAIKey } from "@/lib/ai/keys";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getBillCustomer, getBillingContext, loadDraft } from "@/lib/billing/server";
 import { emptyDraft } from "@/lib/billing/types";
@@ -13,7 +14,7 @@ export default async function NewBillPage({ searchParams }: PageProps<"/billing/
   const customerParam = typeof sp.customer === "string" && UUID.test(sp.customer) ? sp.customer : null;
 
   const supabase = await createClient();
-  const ctx = await getBillingContext(supabase, user.businessId);
+  const [ctx, aiKey] = await Promise.all([getBillingContext(supabase, user.businessId), resolveOpenAIKey(user.businessId)]);
   const draft = draftParam ? await loadDraft(supabase, draftParam) : null;
   const customer = !draft && customerParam ? await getBillCustomer(supabase, customerParam) : null;
   const initial = draft?.data ?? emptyDraft(ctx.today, customer);
@@ -25,6 +26,7 @@ export default async function NewBillPage({ searchParams }: PageProps<"/billing/
       ctx={ctx}
       initial={initial}
       draftId={draft?.id ?? null}
+      voiceEnabled={Boolean(aiKey)}
     />
   );
 }

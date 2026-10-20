@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/session";
+import { resolveRequest } from "@/lib/masters/requests";
 import { createClient } from "@/lib/supabase/server";
+import { tamilToLatin } from "@/lib/voice/translit";
 
 export type FormState = { ok: boolean; message: string } | null;
 
@@ -15,6 +17,7 @@ const optionalNumber = z
 
 const Item = z.object({
   id: z.string().uuid().optional().or(z.literal("").transform(() => undefined)),
+  request_id: z.string().uuid().optional().or(z.literal("").transform(() => undefined)),
   name: z.string().trim().min(1, "Enter the item name").max(120),
   name_ta: z.string().trim().max(120).transform((s) => s || null),
   aliases: z
@@ -42,14 +45,17 @@ export async function saveItemAction(_prev: FormState, formData: FormData): Prom
   const slabs = (biz?.gst_slabs ?? []).map(Number);
   if (!slabs.includes(parsed.data.gst_rate)) return { ok: false, message: `GST must be one of: ${slabs.join(", ")}%` };
 
-  const { id, ...values } = parsed.data;
-  const { error } = id
-    ? await supabase.from("products").update(values).eq("id", id)
-    : await supabase.from("products").insert({ ...values, business_id: user.businessId, created_by: user.id });
-  if (error) return { ok: false, message: "Couldn't save the item." };
+  const { id, request_id, ...fields } = parsed.data;
+  const values = { ...fields, name_latin: fields.name_ta ? tamilToLatin(fields.name_ta) : null };
+  const { data: saved, error } = id
+    ? await supabase.from("products").update(values).eq("id", id).select("id").single()
+    : await supabase.from("products").insert({ ...values, business_id: user.businessId, created_by: user.id }).select("id").single();
+  if (error || !saved) return { ok: false, message: "Couldn't save the item." };
 
+  if (request_id) await resolveRequest(request_id, "approved", saved.id, user.id);
   revalidatePath("/admin/items");
-  return { ok: true, message: id ? `Updated ${values.name}` : `Added ${values.name}` };
+  revalidatePath("/admin/requests");
+  return { ok: true, message: id ? `Updated ${values.name}` : `Added ${values.name}${request_id ? " — request done, the bill can continue" : ""}` };
 }
 
 export async function setItemActiveAction(formData: FormData) {

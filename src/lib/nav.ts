@@ -13,10 +13,10 @@ export const ADMIN_NAV = [
   { href: "/admin/users", id: "A-02", label: "Users", ta: "பயனர்கள்", ready: true },
   { href: "/admin/parties", id: "A-03", label: "Customers and vendors", ta: "வாடிக்கையாளர் · விற்பனையாளர்", ready: true },
   { href: "/admin/items", id: "A-04", label: "Items and categories", ta: "பொருட்கள் · வகைகள்", ready: true },
-  { href: "/admin/review", id: "A-05", label: "Customer review", ta: "வாடிக்கையாளர் சரிபார்ப்பு" },
-  { href: "/admin/requests", id: "A-06", label: "Master requests", ta: "கோரிக்கைகள்" },
+  { href: "/admin/review", id: "A-05", label: "Customer review", ta: "வாடிக்கையாளர் சரிபார்ப்பு", ready: true },
+  { href: "/admin/requests", id: "A-06", label: "Master requests", ta: "கோரிக்கைகள்", ready: true },
   { href: "/admin/business", id: "A-07", label: "Business profile", ta: "நிறுவன விவரம்", ready: true },
-  { href: "/admin/agents", id: "A-08", label: "Agent settings", ta: "உதவியாளர் அமைப்பு" },
+  { href: "/admin/ai", id: "A-08", label: "AI · voice settings", ta: "AI · குரல் அமைப்பு", ready: true },
   { href: "/admin/exports", id: "A-09", label: "Exports", ta: "ஏற்றுமதி" },
   { href: "/admin/audit", id: "A-10", label: "Audit log", ta: "மாற்றப் பதிவு" },
 ] as const;

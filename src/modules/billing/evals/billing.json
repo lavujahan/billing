@@ -1,0 +1,110 @@
+{
+  "note": "Starter eval set (synthetic). Replace and extend with 20–30 real shop sentences before tuning the prompt, per docs/PLAN.md.",
+  "products": [
+    { "id": "00000000-0000-0000-0000-00000000c001", "name": "Cement 50kg", "name_ta": "சிமெண்ட்", "aliases": ["cement", "siment"], "unit": "bag", "default_rate": 450 },
+    { "id": "00000000-0000-0000-0000-00000000c002", "name": "TMT rod 12mm", "name_ta": "கம்பி", "aliases": ["kambi", "rod", "steel rod"], "unit": "nos", "default_rate": 680 },
+    { "id": "00000000-0000-0000-0000-00000000c003", "name": "Binding wire", "name_ta": "கட்டு கம்பி", "aliases": ["binding", "wire"], "unit": "kg", "default_rate": 85 },
+    { "id": "00000000-0000-0000-0000-00000000c004", "name": "River sand", "name_ta": "மணல்", "aliases": ["manal", "sand"], "unit": "ton", "default_rate": 1800 },
+    { "id": "00000000-0000-0000-0000-00000000c005", "name": "Red bricks", "name_ta": "செங்கல்", "aliases": ["sengal", "brick", "bricks"], "unit": "nos", "default_rate": 9 },
+    { "id": "00000000-0000-0000-0000-00000000c006", "name": "PVC pipe 1 inch", "name_ta": "பைப்", "aliases": ["pipe", "pvc"], "unit": "nos", "default_rate": 220 },
+    { "id": "00000000-0000-0000-0000-00000000c007", "name": "Wall paint 1L", "name_ta": "பெயிண்ட்", "aliases": ["paint"], "unit": "nos", "default_rate": 350 },
+    { "id": "00000000-0000-0000-0000-00000000c008", "name": "Floor tiles", "name_ta": "டைல்ஸ்", "aliases": ["tiles", "tile"], "unit": "sqft", "default_rate": 45 }
+  ],
+  "customers": [
+    { "id": "00000000-0000-0000-0000-0000000000a1", "name": "Kumar Stores", "name_ta": "குமார் ஸ்டோர்ஸ்" },
+    { "id": "00000000-0000-0000-0000-0000000000a2", "name": "Murugan Agencies", "name_ta": "முருகன் ஏஜென்சீஸ்" },
+    { "id": "00000000-0000-0000-0000-0000000000a3", "name": "Ravi Hardware", "name_ta": "ரவி ஹார்டுவேர்" },
+    { "id": "00000000-0000-0000-0000-0000000000a4", "name": "Sri Lakshmi Builders", "name_ta": "ஸ்ரீ லட்சுமி பில்டர்ஸ்" },
+    { "id": "00000000-0000-0000-0000-0000000000a5", "name": "Senthil Constructions", "name_ta": "செந்தில் கன்ஸ்ட்ரக்ஷன்ஸ்" }
+  ],
+  "cases": [
+    {
+      "said": "குமார் ஸ்டோர்ஸ்க்கு 10 சிமெண்ட் மூட்டை 450 ரூபாய், 5 கம்பி 680, credit-ல போடு",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": 450 }, { "product": "TMT rod 12mm", "qty": 5, "rate": 680 }], "payment": "credit" }]
+    },
+    {
+      "said": "Murugan Agencies 20 cement bag 440 cash",
+      "expect": [{ "customer": "Murugan Agencies", "items": [{ "product": "Cement 50kg", "qty": 20, "rate": 440 }], "payment": "paid" }]
+    },
+    {
+      "said": "Ravi Hardware-க்கு பத்து மூட்டை சிமெண்ட் நானூத்தி அம்பது, partial 2000",
+      "expect": [{ "customer": "Ravi Hardware", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": 450 }], "payment": "partial", "amount_paid": 2000 }]
+    },
+    {
+      "said": "cash sale, 2 paint 350",
+      "expect": [{ "customer": "Cash", "items": [{ "product": "Wall paint 1L", "qty": 2, "rate": 350 }] }]
+    },
+    {
+      "said": "Sri Lakshmi Builders 1000 sengal 9 rupees, 3 ton manal",
+      "expect": [{ "customer": "Sri Lakshmi Builders", "items": [{ "product": "Red bricks", "qty": 1000, "rate": 9 }, { "product": "River sand", "qty": 3, "rate": null }] }]
+    },
+    {
+      "said": "Kumar 10 cement, Murugan 20 cement",
+      "expect": [
+        { "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": null }] },
+        { "customer": "Murugan Agencies", "items": [{ "product": "Cement 50kg", "qty": 20, "rate": null }] }
+      ]
+    },
+    {
+      "said": "Senthil Constructions 5 pipe 220 GST சேர்த்து, credit",
+      "expect": [{ "customer": "Senthil Constructions", "items": [{ "product": "PVC pipe 1 inch", "qty": 5, "rate": 220 }], "payment": "credit", "rate_includes_gst": true }]
+    },
+    {
+      "said": "குமார் ஸ்டோர்ஸ் இருபத்தஞ்சு மூட்டை சிமெண்ட் rate 445, 500 discount",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 25, "rate": 445 }], "discount_amount": 500 }]
+    },
+    {
+      "said": "Ravi 4 kambi 690, 2 binding wire 85",
+      "expect": [{ "customer": "Ravi Hardware", "items": [{ "product": "TMT rod 12mm", "qty": 4, "rate": 690 }, { "product": "Binding wire", "qty": 2, "rate": 85 }] }]
+    },
+    {
+      "said": "Murugan Agencies ரெண்டரை டன் மணல் 1800",
+      "expect": [{ "customer": "Murugan Agencies", "items": [{ "product": "River sand", "qty": 2.5, "rate": 1800 }] }]
+    },
+    {
+      "said": "Kumar Stores tiles 100 sqft, sqft 45",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": "Floor tiles", "qty": 100, "rate": 45 }] }]
+    },
+    {
+      "said": "நேத்து Kumar Stores 10 cement 450",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": 450 }], "date": "yesterday" }]
+    },
+    {
+      "said": "Ravi Hardware 10 cement",
+      "expect": [{ "customer": "Ravi Hardware", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": null }] }]
+    },
+    {
+      "said": "Kumar Stores 10 cement total 4500",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": 450 }] }]
+    },
+    {
+      "said": "Sri Lakshmi Builders 50 cement 430, 5 percent discount, credit",
+      "expect": [{ "customer": "Sri Lakshmi Builders", "items": [{ "product": "Cement 50kg", "qty": 50, "rate": 430 }], "discount_percent": 5, "payment": "credit" }]
+    },
+    {
+      "said": "முருகன் ஏஜென்சீஸ் ஐம்பது மூட்டை சிமெண்ட் நானூத்தி நாப்பது, கடன்",
+      "expect": [{ "customer": "Murugan Agencies", "items": [{ "product": "Cement 50kg", "qty": 50, "rate": 440 }], "payment": "credit" }]
+    },
+    {
+      "said": "Senthil 6 paint 340 GPay",
+      "expect": [{ "customer": "Senthil Constructions", "items": [{ "product": "Wall paint 1L", "qty": 6, "rate": 340 }], "payment": "paid" }]
+    },
+    {
+      "said": "Kumar Stores 2 mixer machine 5000",
+      "expect": [{ "customer": "Kumar Stores", "items": [{ "product": null, "qty": 2, "rate": 5000 }] }]
+    },
+    {
+      "said": "Kumar 10 cement 450, Murugan 5 kambi 690, Ravi 2 paint 350",
+      "expect": [
+        { "customer": "Kumar Stores", "items": [{ "product": "Cement 50kg", "qty": 10, "rate": 450 }] },
+        { "customer": "Murugan Agencies", "items": [{ "product": "TMT rod 12mm", "qty": 5, "rate": 690 }] },
+        { "customer": "Ravi Hardware", "items": [{ "product": "Wall paint 1L", "qty": 2, "rate": 350 }] }
+      ]
+    },
+    {
+      "said": "cement rate 460",
+      "form": { "customer": "Kumar Stores", "lines": [{ "key": "L1", "item": "Cement 50kg", "qty": "10", "rate": "450" }], "payment": "credit" },
+      "expect": [{ "customer": null, "items": [], "line_updates": [{ "line_key": "L1", "rate": 460 }] }]
+    }
+  ]
+}

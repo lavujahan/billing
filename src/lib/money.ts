@@ -30,6 +30,10 @@ export function todayISO(timeZone = "Asia/Kolkata") {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
 }
 
+export function daysAgoISO(days: number) {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
 export function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }) {
   return new Intl.DateTimeFormat("en-IN", { ...opts, timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
 }

@@ -19,6 +19,8 @@ export type BillLine = {
   qty: string;
   rate: string;
   usualRate: number | null;
+  // Set when the line came from voice; below LOW_CONFIDENCE the form outlines it for checking.
+  confidence?: number | null;
 };
 
 export type PaymentStatus = "credit" | "paid" | "partial";

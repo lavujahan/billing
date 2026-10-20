@@ -19,17 +19,32 @@ export type ItemValues = {
 
 const UNITS = ["nos", "bag", "kg", "g", "litre", "ml", "metre", "ft", "sqft", "box", "packet", "bundle", "ton", "set", "pair"];
 
-export function ItemForm({ item, slabs }: { item: ItemValues | null; slabs: number[] }) {
+export function ItemForm({
+  item,
+  slabs,
+  request,
+}: {
+  item: ItemValues | null;
+  slabs: number[];
+  request?: { id: string; name: string; rate: string } | null;
+}) {
   const [state, action, pending] = useActionState(saveItemAction, null);
+  const prefill = item ?? (request ? { name: request.name, default_rate: request.rate ? Number(request.rate) : null } : null);
   return (
-    <form key={item?.id ?? "new"} action={action} className="flex flex-col gap-3 rounded-card border border-outline bg-surface p-4">
+    <form key={item?.id ?? request?.id ?? "new"} action={action} className="flex flex-col gap-3 rounded-card border border-outline bg-surface p-4">
       <input type="hidden" name="id" value={item?.id ?? ""} />
-      <Field label="Item name · பெயர் (English)" name="name" required maxLength={120} defaultValue={item?.name} />
+      <input type="hidden" name="request_id" value={item ? "" : (request?.id ?? "")} />
+      {request && !item && (
+        <p className="rounded-field bg-primary-container px-3 py-2 text-sm text-primary-strong">
+          Requested from a bill as “{request.name}”. Fix the name if needed — the spoken word is kept as an alias.
+        </p>
+      )}
+      <Field label="Item name · பெயர் (English)" name="name" required maxLength={120} defaultValue={prefill?.name} />
       <Field label="Tamil name · தமிழ் பெயர்" name="name_ta" maxLength={120} defaultValue={item?.name_ta ?? ""} />
       <Field
         label="Spoken names (comma separated)"
         name="aliases"
-        defaultValue={item?.aliases.join(", ")}
+        defaultValue={item ? item.aliases.join(", ") : (request?.name ?? "")}
         hint="e.g. கம்பி, kambi, rod — used by search and voice"
       />
       <div className="grid grid-cols-2 gap-3">
@@ -42,7 +57,7 @@ export function ItemForm({ item, slabs }: { item: ItemValues | null; slabs: numb
             ))}
           </datalist>
         </label>
-        <Field label="Default rate (₹)" name="default_rate" inputMode="decimal" defaultValue={item?.default_rate ?? ""} />
+        <Field label="Default rate (₹)" name="default_rate" inputMode="decimal" defaultValue={prefill?.default_rate ?? ""} />
         <label className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">GST %</span>
           <select name="gst_rate" defaultValue={String(item?.gst_rate ?? slabs.at(-2) ?? 18)} className={inputClass}>
