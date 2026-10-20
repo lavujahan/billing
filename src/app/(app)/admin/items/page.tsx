@@ -21,6 +21,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
   ]);
   const editing = typeof sp.edit === "string" ? (items ?? []).find((i) => i.id === sp.edit) ?? null : null;
   const slabs = (biz?.gst_slabs ?? [0, 5, 12, 18, 28]).map(Number);
+  const missingRate = (items ?? []).filter((i) => i.active && i.default_rate === null).length;
   const request =
     typeof sp.request === "string" && /^[0-9a-f-]{36}$/i.test(sp.request)
       ? { id: sp.request, name: typeof sp.name === "string" ? sp.name.slice(0, 120) : "", rate: typeof sp.rate === "string" ? sp.rate : "" }
@@ -41,6 +42,11 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
             />
           </form>
           <SectionHeading title={`${items?.length ?? 0} items`} />
+          {missingRate > 0 && (
+            <p className="rounded-field bg-warning-container px-3 py-2 text-sm text-warning-text">
+              {missingRate} {missingRate === 1 ? "item has" : "items have"} no rate — bills will ask for one. Tap Edit to add it.
+            </p>
+          )}
           <Card className="overflow-hidden">
             {(items ?? []).length === 0 && <p className="px-4 py-6 text-center text-sm text-ink-muted">No items yet — add your first item.</p>}
             {(items ?? []).map((it, i) => (
@@ -51,7 +57,12 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
                     {it.name_ta && <span className="font-normal text-ink-muted"> · {it.name_ta}</span>}
                   </span>
                   <span className="text-xs text-ink-muted">
-                    {it.default_rate !== null ? formatINR(Number(it.default_rate)) : "no rate"} / {it.unit ?? "unit"} · GST {Number(it.gst_rate ?? 0)}%
+                    {it.default_rate !== null ? (
+                      formatINR(Number(it.default_rate))
+                    ) : (
+                      <span className="rounded-full bg-warning-container px-2 py-0.5 font-semibold text-warning-text">No rate</span>
+                    )}{" "}
+                    / {it.unit ?? "unit"} · GST {Number(it.gst_rate ?? 0)}%
                     {it.hsn_code ? ` · HSN ${it.hsn_code}` : ""}
                     {it.active ? "" : " · inactive"}
                   </span>

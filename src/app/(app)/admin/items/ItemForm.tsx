@@ -57,7 +57,14 @@ export function ItemForm({
             ))}
           </datalist>
         </label>
-        <Field label="Default rate (₹)" name="default_rate" inputMode="decimal" defaultValue={prefill?.default_rate ?? ""} />
+        <Field
+          label="Rate (₹) · விலை *"
+          name="default_rate"
+          inputMode="decimal"
+          required
+          defaultValue={prefill?.default_rate ?? ""}
+          hint="Used on bills unless the customer had a different rate last time"
+        />
         <label className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">GST %</span>
           <select name="gst_rate" defaultValue={String(item?.gst_rate ?? slabs.at(-2) ?? 18)} className={inputClass}>

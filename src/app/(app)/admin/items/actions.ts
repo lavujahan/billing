@@ -9,11 +9,12 @@ import { tamilToLatin } from "@/lib/voice/translit";
 
 export type FormState = { ok: boolean; message: string } | null;
 
-const optionalNumber = z
+const rate = z
   .string()
   .trim()
-  .transform((s) => (s === "" ? null : Number(s.replace(/,/g, ""))))
-  .refine((n) => n === null || (Number.isFinite(n) && n >= 0), "Enter a valid number");
+  .min(1, "Enter the rate · விலை தேவை")
+  .transform((s) => Number(s.replace(/[,₹\s]/g, "")))
+  .refine((n) => Number.isFinite(n) && n > 0, "Rate must be a number above 0");
 
 const Item = z.object({
   id: z.string().uuid().optional().or(z.literal("").transform(() => undefined)),
@@ -25,7 +26,7 @@ const Item = z.object({
     .max(500)
     .transform((s) => [...new Set(s.split(",").map((a) => a.trim()).filter(Boolean))]),
   unit: z.string().trim().max(20).transform((s) => s || null),
-  default_rate: optionalNumber,
+  default_rate: rate,
   gst_rate: z.coerce.number(),
   hsn_code: z
     .string()
