@@ -9,7 +9,8 @@ import { getInvoice } from "@/lib/billing/server";
 import { billShareText } from "@/lib/billing/share";
 import { formatDate, formatINR } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
-import { CancelBillButton } from "../_components/CancelBillButton";
+import { CancelRecordButton } from "@/components/CancelRecordButton";
+import { cancelBillAction } from "../actions";
 import { ShareBillButton } from "../_components/ShareBillButton";
 
 const PAYMENT = { paid: "Paid · Cash", credit: "Credit", partial: "Partial" } as const;
@@ -132,7 +133,13 @@ export default async function BillViewPage({ params }: PageProps<"/billing/[id]"
           <Link href={`/billing/${bill.id}/edit`} className={action}>
             Edit · திருத்து
           </Link>
-          <CancelBillButton invoiceId={bill.id} invoiceNo={bill.invoice_no} />
+          <CancelRecordButton
+            id={bill.id}
+            title={`Cancel ${bill.invoice_no}?`}
+            explanation="The bill keeps its number and stays in the list as Cancelled. It no longer counts in sales or the customer's balance."
+            buttonLabel="Cancel bill"
+            action={cancelBillAction}
+          />
         </div>
       )}
 

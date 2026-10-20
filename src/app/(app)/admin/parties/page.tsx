@@ -6,10 +6,41 @@ import { formatINR } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { setCustomerActiveAction } from "./actions";
 import { CustomerForm, type CustomerValues } from "./CustomerForm";
+import { VendorsTab } from "./VendorsTab";
+
+function Tabs({ active }: { active: "customers" | "vendors" }) {
+  const tab = (key: "customers" | "vendors", label: string) => (
+    <Link
+      href={key === "customers" ? "/admin/parties" : "/admin/parties?tab=vendors"}
+      aria-current={active === key ? "page" : undefined}
+      className={`flex min-h-11 items-center rounded-full px-4 text-sm no-underline ${
+        active === key ? "border-[1.5px] border-primary bg-primary-container font-bold text-primary-strong" : "border border-chip-border text-ink"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+  return (
+    <div className="flex gap-2" role="tablist">
+      {tab("customers", "Customers · வாடிக்கையாளர்")}
+      {tab("vendors", "Vendors · விற்பனையாளர்")}
+    </div>
+  );
+}
 
 export default async function CustomersPage({ searchParams }: PageProps<"/admin/parties">) {
   const user = await getCurrentUser();
   const sp = await searchParams;
+  if (sp.tab === "vendors") {
+    const { data: biz } = await (await createClient()).from("businesses").select("state_code").eq("id", user.businessId).single();
+    return (
+      <Page wide>
+        <PageTitle title="Vendors · விற்பனையாளர்கள்" subtitle="Your suppliers. Purchases are matched to them by GSTIN and name." />
+        <Tabs active="vendors" />
+        <VendorsTab sp={sp} businessStateCode={biz?.state_code ?? null} />
+      </Page>
+    );
+  }
   const q = typeof sp.q === "string" ? sp.q.replace(/[%_\\,()]/g, "").trim() : "";
   const review = sp.review === "1";
   const supabase = await createClient();
@@ -33,6 +64,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/admin/
   return (
     <Page wide>
       <PageTitle title="Customers · வாடிக்கையாளர்கள்" subtitle="New customers added from bills are marked for review — add GSTIN and address here." />
+      <Tabs active="customers" />
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <section className="flex flex-col gap-2">
           <form role="search" className="flex gap-2">
@@ -50,7 +82,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/admin/
               To review{toReview && !review ? ` (${toReview})` : ""}
             </Link>
           </form>
-          <SectionHeading title={`${customers?.length ?? 0} customers`} hint="Vendors arrive with the Purchase form" />
+          <SectionHeading title={`${customers?.length ?? 0} customers`} />
           <Card className="overflow-hidden">
             {(customers ?? []).length === 0 && <p className="px-4 py-6 text-center text-sm text-ink-muted">No customers here.</p>}
             {(customers ?? []).map((c, i) => (

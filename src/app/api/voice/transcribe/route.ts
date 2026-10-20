@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { transcribe, type FieldKind } from "@/lib/ai/transcribe";
 import { readVoiceRequest, vocabulary } from "@/lib/voice/server";
 
-const KINDS: FieldKind[] = ["customer", "product", "qty", "amount", "date", "payment"];
+const KINDS: FieldKind[] = ["customer", "vendor", "product", "qty", "amount", "date", "payment"];
 
 // Field voice: one short recording → text. Parsing into a value happens in the browser, in code.
 export async function POST(request: Request) {
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (!KINDS.includes(kind)) return NextResponse.json({ error: "bad_kind" }, { status: 400 });
   const moduleId = String(req.form.get("module") ?? "billing").slice(0, 20);
 
-  const vocab = kind === "customer" || kind === "product" ? await vocabulary(req.supabase, [kind]) : [];
+  const vocab = kind === "customer" || kind === "product" || kind === "vendor" ? await vocabulary(req.supabase, [kind]) : [];
   try {
     const text = await transcribe({
       key: req.key,

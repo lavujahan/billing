@@ -23,7 +23,7 @@ export const ADMIN_NAV = [
 
 // Full-screen form routes: on phones they replace the top bar and bottom nav with their own header and Save bar.
 export function isFormRoute(pathname: string) {
-  return pathname === "/billing/new" || /^\/billing\/[^/]+\/edit$/.test(pathname);
+  return /^\/(billing|purchase)\/new$/.test(pathname) || /^\/(billing|purchase)\/[^/]+\/edit$/.test(pathname) || pathname === "/purchase/pay";
 }
 
 export function isActive(pathname: string, href: string) {

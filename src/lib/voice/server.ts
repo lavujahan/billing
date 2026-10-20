@@ -25,8 +25,12 @@ export async function readVoiceRequest(request: Request): Promise<VoiceRequest |
 }
 
 // Recent customer and item names, used to steer speech-to-text spelling.
-export async function vocabulary(supabase: Supabase, kinds: Array<"customer" | "product">): Promise<string[]> {
+export async function vocabulary(supabase: Supabase, kinds: Array<"customer" | "product" | "vendor">): Promise<string[]> {
   const out: string[] = [];
+  if (kinds.includes("vendor")) {
+    const { data } = await supabase.from("vendors").select("name, name_ta").eq("active", true).order("name").limit(60);
+    for (const v of data ?? []) out.push(v.name, ...(v.name_ta ? [v.name_ta] : []));
+  }
   if (kinds.includes("customer")) {
     const { data } = await supabase.from("customers").select("name, name_ta").eq("active", true).order("created_at", { ascending: false }).limit(40);
     for (const c of data ?? []) out.push(c.name, ...(c.name_ta ? [c.name_ta] : []));

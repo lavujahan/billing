@@ -20,9 +20,11 @@ export function FieldMic({
   label,
   onText,
   onListening,
+  module = "billing",
 }: {
   kind: Exclude<FieldKind, "bill">;
   label: string;
+  module?: string;
   onText: (text: string) => void | string | Promise<void | string>;
   onListening?: (listening: boolean) => void;
 }) {
@@ -41,7 +43,7 @@ export function FieldMic({
     if (rec === "denied") return setMessage("Microphone blocked — allow it in browser settings.");
     if (!rec) return setMessage("புரியல, மறுபடியும் சொல்லுங்க");
     setBusy(true);
-    const res = await postAudio<{ text?: string }>("/api/voice/transcribe", rec, { kind, module: "billing" });
+    const res = await postAudio<{ text?: string }>("/api/voice/transcribe", rec, { kind, module });
     setBusy(false);
     if (!res.text) return setMessage(res.message ?? "புரியல, மறுபடியும் சொல்லுங்க");
     const problem = await onText(res.text);

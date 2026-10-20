@@ -26,6 +26,14 @@ export async function mergeRequestAction(formData: FormData) {
   revalidatePath("/admin/requests");
 }
 
+export async function mergeVendorRequestAction(formData: FormData) {
+  const user = await requireAdmin();
+  const id = uuid.parse(formData.get("id"));
+  const vendorId = uuid.parse(formData.get("vendorId"));
+  await resolve(id, "merged", vendorId, user.id);
+  revalidatePath("/admin/requests");
+}
+
 export async function rejectRequestAction(formData: FormData) {
   const user = await requireAdmin();
   const id = uuid.parse(formData.get("id"));

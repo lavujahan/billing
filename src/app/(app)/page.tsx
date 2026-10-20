@@ -16,49 +16,62 @@ export default async function HomePage() {
   const supabase = await createClient();
   const admin = isAdminRole(user.role);
   const since = daysAgoISO(3);
-  const [{ data: sales }, drafts, review, openRequests, { data: resolved }] = await Promise.all([
-    supabase.from("invoices").select("total_amount").eq("status", "confirmed").eq("invoice_date", todayISO()),
+  const today = todayISO();
+  const [{ data: sales }, { data: purchases }, billDrafts, purchaseDrafts, review, openRequests, { data: resolved }] = await Promise.all([
+    supabase.from("invoices").select("total_amount").eq("status", "confirmed").eq("invoice_date", today),
+    supabase.from("purchases").select("total_amount").eq("status", "confirmed").eq("bill_date", today),
     listOpenDrafts(supabase, "billing"),
+    listOpenDrafts(supabase, "purchase"),
     admin ? supabase.from("customers").select("id", { count: "exact", head: true }).eq("needs_review", true).eq("active", true) : Promise.resolve({ count: 0 }),
     admin ? supabase.from("master_requests").select("id", { count: "exact", head: true }).eq("status", "open") : Promise.resolve({ count: 0 }),
     supabase
       .from("master_requests")
-      .select("id, requested_name, status, draft_id")
+      .select("id, kind, requested_name, status, draft_id")
       .eq("created_by", user.id)
       .in("status", ["approved", "merged"])
       .gte("resolved_at", since)
       .not("draft_id", "is", null)
       .limit(3),
   ]);
-  const openDraftIds = new Set(drafts.map((d) => d.id));
+  const openDraftIds = new Set([...billDrafts, ...purchaseDrafts].map((d) => d.id));
   const salesTotal = (sales ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
+  const purchaseTotal = (purchases ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
 
   const attention: Attention[] = [
     ...(resolved ?? [])
       .filter((r) => r.draft_id && openDraftIds.has(r.draft_id))
       .map((r) => ({
         key: `req-${r.id}`,
-        href: `/billing/new?draft=${r.draft_id}`,
+        href: r.kind === "vendor" ? `/purchase/new?draft=${r.draft_id}` : `/billing/new?draft=${r.draft_id}`,
         dot: "bg-primary",
-        title: `Item “${r.requested_name}” added by admin`,
-        detail: "Your bill can continue",
+        title: `${r.kind === "vendor" ? "Vendor" : "Item"} “${r.requested_name}” added by admin`,
+        detail: r.kind === "vendor" ? "Your purchase can continue" : "Your bill can continue",
         detailClass: "text-ink-muted",
         action: "Resume",
       })),
+    ...purchaseDrafts.slice(0, 2).map((d) => ({
+      key: d.id,
+      href: `/purchase/new?draft=${d.id}`,
+      dot: "bg-ink-muted",
+      title: `Unsaved purchase · ${d.title || "no vendor yet"}`,
+      detail: `${formatINR(d.amount ?? 0)} · draft from ${formatTime(d.updatedAt)}`,
+      detailClass: "text-ink-muted",
+      action: "Open",
+    })),
     ...((openRequests.count ?? 0) > 0
       ? [
           {
             key: "requests",
             href: "/admin/requests",
             dot: "bg-voice",
-            title: `${openRequests.count} item requests waiting`,
-            detail: "Staff are waiting to finish bills",
+            title: `${openRequests.count} item/vendor requests waiting`,
+            detail: "Staff are waiting to finish bills or purchases",
             detailClass: "text-warning-text",
             action: "Handle",
           },
         ]
       : []),
-    ...drafts.slice(0, 3).map((d) => ({
+    ...billDrafts.slice(0, 3).map((d) => ({
       key: d.id,
       href: `/billing/new?draft=${d.id}`,
       dot: "bg-ink-muted",
@@ -84,7 +97,7 @@ export default async function HomePage() {
 
   const summary = [
     { href: "/billing", label: "Sales · விற்பனை", value: formatINR(salesTotal), caption: `${sales?.length ?? 0} bills` },
-    { href: "/reports", label: "Purchase · கொள்முதல்", value: "₹0", caption: "Coming soon" },
+    { href: "/purchase", label: "Purchase · கொள்முதல்", value: formatINR(purchaseTotal), caption: `${purchases?.length ?? 0} bills` },
     { href: "/reports", label: "Expense · செலவு", value: "₹0", caption: "Coming soon" },
     { href: "/reports", label: "Collection · வரவு", value: "₹0", caption: "Coming soon" },
   ];
@@ -100,7 +113,7 @@ export default async function HomePage() {
 
       <div className="grid grid-cols-2 gap-2.5">
         <QuickActionButton href="/billing/new" primary icon={<BillIcon />} label="New bill" />
-        <QuickActionButton href="/purchase" icon={<CameraIcon />} label="Scan purchase" />
+        <QuickActionButton href="/purchase/new?scan=1" icon={<CameraIcon />} label="Scan purchase" />
         <QuickActionButton href="/expense" icon={<PlusCircleIcon />} label="Add expense" />
         <QuickActionButton href="/collection" icon={<CollectionIcon />} label="Record payment" />
       </div>
