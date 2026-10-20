@@ -17,7 +17,15 @@ import type { BillCustomer, BillDraft, BillingContext, BillLine, PaymentStatus }
 import { validateBill } from "@/lib/billing/validate";
 import { LOW_CONFIDENCE, type FreeVoiceResponse } from "@/lib/billing/voice-patch";
 import { formatDate, formatINR } from "@/lib/money";
-import { detectCommand, nameSearchTerms, parseAmountUtterance, parseDateUtterance, parseLineUtterance, parsePaymentUtterance } from "@/lib/voice/parse";
+import {
+  detectCommand,
+  nameSearchTerms,
+  parseAmountUtterance,
+  parseDateUtterance,
+  parseLineUtterance,
+  parsePaymentUtterance,
+  splitItemUtterance,
+} from "@/lib/voice/parse";
 import { confidentPick, mergeByBestScore } from "@/lib/voice/pick";
 import { discardDraftAction, requestItemAction, saveDraftAction } from "../actions";
 import { SaveSummary } from "./SaveSummary";
@@ -59,7 +67,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   const [restorable, setRestorable] = useState<{ value: BillDraft; at: number } | null>(null);
   const [undoStack, setUndoStack] = useState<BillDraft[]>([]);
   const [customerChoice, setCustomerChoice] = useState<ApplyResult["customerChoice"]>(null);
-  const [productChoice, setProductChoice] = useState<{ spoken: string; candidates: ProductHit[] } | null>(null);
+  const [productChoice, setProductChoice] = useState<{ spoken: string; candidates: ProductHit[]; qty: number | null } | null>(null);
   const [unmatched, setUnmatched] = useState<ApplyResult["unmatched"]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [voiceStatus, setVoiceStatus] = useState<{ kind: "busy" } | { kind: "done"; transcript: string; chips: string[] } | { kind: "error"; message: string } | null>(null);
@@ -142,7 +150,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     }));
   }
 
-  async function addProduct(p: ProductHit, fromVoice = false) {
+  async function addProduct(p: ProductHit, fromVoice = false, qty: number | null = null) {
     const key = crypto.randomUUID();
     const price = await priceFor(p.id, draft.customer?.id);
     focusLine.current = key;
@@ -154,7 +162,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
       unit: p.unit,
       hsn: p.hsn,
       gstRate: p.gstRate,
-      qty: "1",
+      qty: qty === null ? "1" : String(qty),
       rate: price.rate === null ? "" : String(price.rate),
       usualRate: price.usualRate,
     };
@@ -181,14 +189,17 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     else setCustomerChoice({ spokenName: text.trim(), candidates, conflictWith: draft.customer });
   }
 
+  // Item and quantity come from speech; the rate always comes from the master (customer's last rate, else item rate).
   async function onProductVoice(text: string) {
     if (detectCommand(text) === "cancel") return setAddingItem(false);
-    const candidates = await searchByVoice<ProductHit>("products", text);
+    const { itemText, qty } = splitItemUtterance(text);
+    if (!itemText) return NOT_HEARD;
+    const candidates = await searchByVoice<ProductHit>("products", itemText);
     const pick = confidentPick(candidates);
-    if (pick) await addProduct(pick, true);
-    else if (candidates.length) setProductChoice({ spoken: text.trim(), candidates });
+    if (pick) await addProduct(pick, true, qty);
+    else if (candidates.length) setProductChoice({ spoken: itemText, candidates, qty });
     else {
-      setUnmatched((u) => [...u, { spoken: text.trim(), qty: null, rate: null }]);
+      setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
       return "Not in the item list · item list-ல இல்லை";
     }
   }
@@ -509,10 +520,10 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
 
         {productChoice && (
           <VoiceChooser<ProductHit>
-            title={`Which item? “${productChoice.spoken}”`}
+            title={`Which item? “${productChoice.spoken}”${productChoice.qty ? ` · qty ${productChoice.qty}` : ""}`}
             options={productChoice.candidates}
             detail={(p) => `${p.nameTa ?? ""} · GST ${p.gstRate}%`}
-            onPick={(p) => addProduct(p, true)}
+            onPick={(p) => addProduct(p, true, productChoice.qty)}
             onDismiss={() => setProductChoice(null)}
           />
         )}

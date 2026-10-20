@@ -10,7 +10,7 @@ export type FieldKind = "customer" | "product" | "qty" | "amount" | "date" | "pa
 
 const HINTS: Record<FieldKind, string> = {
   customer: "Shop or person name, Tamil or English. ",
-  product: "Item name in a shop, Tamil or English, e.g. சிமெண்ட், கம்பி, cement, TMT rod. ",
+  product: "Item name in a shop with an optional quantity, Tamil or English, e.g. பத்து மூட்டை சிமெண்ட், 5 கம்பி, cement 10 bag. ",
   qty: "A quantity with unit, e.g. பத்து மூட்டை, 10 bag, ரெண்டரை கிலோ. ",
   amount: "A rupee amount in Tamil or English words or digits, e.g. நானூத்தி அம்பது, 450, 3.5k. ",
   date: "A date, e.g. இன்னைக்கு, நேத்து, 15th October. ",

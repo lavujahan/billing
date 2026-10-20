@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseSpokenNumber } from "./numbers";
-import { detectCommand, nameSearchTerms, parseAmountUtterance, parseLineUtterance, parseDateUtterance, parsePaymentUtterance, parseQtyUtterance } from "./parse";
+import { detectCommand, nameSearchTerms, parseAmountUtterance, parseLineUtterance, splitItemUtterance, parseDateUtterance, parsePaymentUtterance, parseQtyUtterance } from "./parse";
 import { tamilToLatin } from "./translit";
 
 test("transliteration", () => {
@@ -71,6 +71,18 @@ test("item card utterance: qty and rate", () => {
   assert.deepEqual(parseLineUtterance("12"), { qty: 12, unit: null, rate: null });
   assert.deepEqual(parseLineUtterance("12 460"), { qty: 12, unit: null, rate: 460 });
   assert.equal(parseLineUtterance("hello"), null);
+});
+
+test("add-item utterance: item and quantity, rate ignored", () => {
+  assert.deepEqual(splitItemUtterance("பத்து மூட்டை சிமெண்ட்"), { itemText: "சிமெண்ட்", qty: 10, unit: "bag" });
+  assert.deepEqual(splitItemUtterance("cement 10 bag"), { itemText: "cement", qty: 10, unit: "bag" });
+  assert.deepEqual(splitItemUtterance("10 bag cement 450"), { itemText: "cement", qty: 10, unit: "bag" });
+  assert.deepEqual(splitItemUtterance("5 கம்பி"), { itemText: "கம்பி", qty: 5, unit: null });
+  assert.deepEqual(splitItemUtterance("ரெண்டரை கிலோ binding wire"), { itemText: "binding wire", qty: 2.5, unit: "kg" });
+  assert.deepEqual(splitItemUtterance("PVC pipe 1 inch"), { itemText: "PVC pipe 1 inch", qty: null, unit: null });
+  assert.deepEqual(splitItemUtterance("TMT rod 12mm 4"), { itemText: "TMT rod 12mm", qty: 4, unit: null });
+  assert.deepEqual(splitItemUtterance("சிமெண்ட்"), { itemText: "சிமெண்ட்", qty: null, unit: null });
+  assert.deepEqual(splitItemUtterance("a cement bag"), { itemText: "a cement", qty: null, unit: "bag" });
 });
 
 test("amounts", () => {

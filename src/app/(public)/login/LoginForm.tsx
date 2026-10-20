@@ -94,6 +94,7 @@ export function LoginForm() {
               ref={(el) => {
                 boxes.current[i] = el;
               }}
+              name={`d${i}`}
               value={d}
               onChange={(e) => setDigit(i, e.target.value)}
               onKeyDown={(e) => {
@@ -106,7 +107,6 @@ export function LoginForm() {
             />
           ))}
         </div>
-        <input type="hidden" name="code" value={digits.join("")} />
       </fieldset>
 
       {state.error && (
@@ -115,7 +115,7 @@ export function LoginForm() {
         </p>
       )}
 
-      <Button type="submit" disabled={pending || digits.join("").length !== 5} className="min-h-[52px] text-base">
+      <Button type="submit" disabled={pending} className="min-h-[52px] text-base">
         {pending ? t.busy : t.submit}
       </Button>
     </form>

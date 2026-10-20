@@ -34,6 +34,30 @@ export function parseQtyUtterance(transcript: string): { qty: number; unit: stri
   return qty && qty > 0 ? { qty, unit } : null;
 }
 
+// Add-item utterance → item words + quantity: "பத்து மூட்டை சிமெண்ட்", "cement 10 bag", "10 bag cement 450".
+// Quantity is the run of number/unit words at the start (or else the end); numbers inside
+// the name stay part of it ("PVC pipe 1 inch", "TMT rod 12mm"). Any spoken rate is ignored —
+// the rate comes from the master.
+export function splitItemUtterance(transcript: string): { itemText: string; qty: number | null; unit: string | null } {
+  const words = transcript.replace(/[,.]/g, " ").trim().split(/\s+/).filter(Boolean);
+  const kind = (w: string) => (unitOf(w) ? "unit" : /^a$/i.test(w) || parseSpokenNumber(w) === null ? "word" : "num");
+  const kinds = words.map(kind);
+
+  let lead = 0;
+  while (lead < words.length && kinds[lead] !== "word") lead++;
+  let trail = words.length;
+  while (trail > lead && kinds[trail - 1] !== "word") trail--;
+
+  const leadRun = words.slice(0, lead);
+  const trailRun = words.slice(trail);
+  const qtyRun = kinds.slice(0, lead).includes("num") ? leadRun : trailRun;
+  const numberWords = qtyRun.filter((w) => kind(w) === "num");
+  const qty = numberWords.length ? parseSpokenNumber(numberWords.join(" ")) : null;
+  const unit = qtyRun.map(unitOf).find(Boolean) ?? null;
+
+  return { itemText: words.slice(lead, trail).join(" "), qty: qty && qty > 0 ? qty : null, unit };
+}
+
 const RATE_WORD = /\b(rate|reet|vilai|velai|price)\b|ரேட்|விலை/i;
 
 // One item-card utterance → qty and/or rate. A unit word or "rate" separates the two:
