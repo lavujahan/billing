@@ -1,27 +1,27 @@
 import "server-only";
-import { Agent, OpenAIProvider, Runner, tool } from "@openai/agents";
+import { Agent, OpenAIProvider, Runner } from "@openai/agents";
 import { z } from "zod";
 import type { ResolvedKey } from "@/lib/ai/keys";
 import { logAiUsage } from "@/lib/ai/usage";
-import type { createClient } from "@/lib/supabase/server";
-import { billingInstructions } from "./prompt";
-
-type Supabase = Awaited<ReturnType<typeof createClient>>;
-type Ctx = { supabase: Supabase };
+import { billingInstructions, type MasterLists } from "./prompt";
 
 export const BILLING_MODEL = process.env.OPENAI_AGENT_MODEL || "gpt-5.4-mini";
+const REASONING = (process.env.OPENAI_AGENT_REASONING || "none") as "none" | "minimal" | "low" | "medium";
 
 // Extraction only. Every field is required-but-nullable so the schema works in strict structured-output mode.
+// The shop's items and customers are in the instructions as short refs ("i12", "c3"), so the model maps
+// spoken words to the master in one call — no tool round trips.
 export const BillExtraction = z.object({
   bills: z
     .array(
       z.object({
         customer_name: z.string().nullable(),
+        customer_ref: z.string().nullable(),
         customer_confidence: z.number(),
         items: z.array(
           z.object({
             spoken_name: z.string(),
-            product_id: z.string().nullable(),
+            item_ref: z.string().nullable(),
             qty: z.number().nullable(),
             unit: z.string().nullable(),
             rate: z.number().nullable(),
@@ -42,50 +42,9 @@ export const BillExtraction = z.object({
 });
 export type BillExtraction = z.infer<typeof BillExtraction>;
 
-const sanitize = (q: string) => q.replace(/[%_\\]/g, "").trim().slice(0, 60);
-
-// Read-only lookups. The agent can't write anything: saving happens only when the user taps Save.
-const findProduct = tool({
-  name: "find_product",
-  description: "Search the shop's item master by spoken item name (English, Tamil or alias). Returns the closest items with ids.",
-  parameters: z.object({ query: z.string() }),
-  execute: async ({ query }, ctx) => {
-    const { supabase } = (ctx?.context ?? {}) as Ctx;
-    const { data } = await supabase.rpc("search_products", { q: sanitize(query), lim: 5 });
-    return JSON.stringify(
-      (data ?? []).map((p: { id: string; name: string; name_ta: string | null; unit: string | null; default_rate: number | null; score: number }) => ({
-        id: p.id,
-        name: p.name,
-        name_ta: p.name_ta,
-        unit: p.unit,
-        default_rate: p.default_rate,
-        score: Number(p.score.toFixed(2)),
-      })),
-    );
-  },
-});
-
-const findCustomer = tool({
-  name: "find_customer",
-  description: "Search the customer list by spoken name. Returns the closest customers.",
-  parameters: z.object({ query: z.string() }),
-  execute: async ({ query }, ctx) => {
-    const { supabase } = (ctx?.context ?? {}) as Ctx;
-    const { data } = await supabase.rpc("search_customers", { q: sanitize(query), lim: 5 });
-    return JSON.stringify(
-      (data ?? []).map((c: { id: string; name: string; name_ta: string | null; score: number }) => ({
-        id: c.id,
-        name: c.name,
-        name_ta: c.name_ta,
-        score: Number(c.score.toFixed(2)),
-      })),
-    );
-  },
-});
-
 export async function runBillingAgent(opts: {
   key: ResolvedKey;
-  supabase: Supabase;
+  masters: MasterLists;
   transcript: string;
   currentForm: unknown;
   today: string;
@@ -93,13 +52,12 @@ export async function runBillingAgent(opts: {
   userId: string;
   logUsage?: boolean;
 }): Promise<BillExtraction> {
-  const agent = new Agent<Ctx, typeof BillExtraction>({
+  const agent = new Agent({
     name: "billing",
     model: BILLING_MODEL,
-    instructions: billingInstructions(opts.today),
-    tools: [findProduct, findCustomer],
+    instructions: billingInstructions(opts.today, opts.masters),
     outputType: BillExtraction,
-    modelSettings: { reasoning: { effort: "low" } },
+    modelSettings: { reasoning: { effort: REASONING } },
   });
   const runner = new Runner({
     modelProvider: new OpenAIProvider({ apiKey: opts.key.apiKey }),
@@ -111,11 +69,9 @@ export async function runBillingAgent(opts: {
   let inputTokens = 0;
   let outputTokens = 0;
   try {
-    const result = await runner.run(
-      agent,
-      `Current form (JSON):\n${JSON.stringify(opts.currentForm)}\n\nUser said:\n${opts.transcript}`,
-      { context: { supabase: opts.supabase }, maxTurns: 6 },
-    );
+    const result = await runner.run(agent, `Current form (JSON):\n${JSON.stringify(opts.currentForm)}\n\nUser said:\n${opts.transcript}`, {
+      maxTurns: 2,
+    });
     inputTokens = result.runContext.usage.inputTokens;
     outputTokens = result.runContext.usage.outputTokens;
     if (!result.finalOutput) throw new Error("agent returned no output");
@@ -124,15 +80,15 @@ export async function runBillingAgent(opts: {
   } finally {
     if (opts.logUsage !== false)
       await logAiUsage({
-      businessId: opts.businessId,
-      userId: opts.userId,
-      moduleId: "billing",
-      kind: "agent_run",
-      model: BILLING_MODEL,
-      keyScope: opts.key.scope,
-      ok,
-      inputTokens,
-      outputTokens,
-    });
+        businessId: opts.businessId,
+        userId: opts.userId,
+        moduleId: "billing",
+        kind: "agent_run",
+        model: BILLING_MODEL,
+        keyScope: opts.key.scope,
+        ok,
+        inputTokens,
+        outputTokens,
+      });
   }
 }

@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "create-user": "tsx --env-file=.env.local scripts/create-user.ts",
+    "reset-code": "tsx --env-file=.env.local scripts/reset-code.ts",
     "eval:billing": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/eval-billing.ts",
     "db:link": "supabase link",
     "db:push": "supabase db push"

@@ -6,11 +6,12 @@ import type { FreeVoiceResponse } from "@/lib/billing/voice-patch";
 import { todayISO } from "@/lib/money";
 import { readVoiceRequest, vocabulary } from "@/lib/voice/server";
 import { runBillingAgent } from "@/modules/billing/agent";
-import { toVoicePatch } from "@/modules/billing/match";
+import { loadMasters, toVoicePatch } from "@/modules/billing/match";
 
 // Free-form voice: whole utterance → transcript → one agent run → matched form patch.
 // Bills for extra customers in the same sentence become separate drafts.
 export async function POST(request: Request) {
+  const t0 = Date.now();
   const req = await readVoiceRequest(request);
   if (req instanceof NextResponse) return req;
   const reply = (body: FreeVoiceResponse, status = 200) => NextResponse.json(body, { status });
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     form = JSON.parse(String(req.form.get("form") ?? "null"));
   } catch {}
 
+  const mastersLoading = loadMasters(req.supabase);
   let transcript = "";
   try {
     transcript = await transcribe({
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
     return reply({ ok: false, error: "stt_failed", message: "Couldn't hear that — try again." }, 502);
   }
   if (!transcript) return reply({ ok: false, error: "empty", message: "புரியல, மறுபடியும் சொல்லுங்க · Didn't catch that." });
+  const tStt = Date.now();
 
   const today = todayISO();
   const formSummary = form && {
@@ -46,22 +49,26 @@ export async function POST(request: Request) {
   };
 
   try {
+    const masters = await mastersLoading;
     const extraction = await runBillingAgent({
       key: req.key,
-      supabase: req.supabase,
+      masters: masters.lists,
       transcript,
       currentForm: formSummary,
       today,
       businessId: req.user.businessId,
       userId: req.user.id,
     });
+    const tAgent = Date.now();
     const [first, ...rest] = extraction.bills;
     if (!first) return reply({ ok: false, error: "nothing", message: "No bill details heard.", transcript });
 
-    const patch = await toVoicePatch(req.supabase, first, form?.customer ?? null);
+    const [patch, ...extraPatches] = await Promise.all([
+      toVoicePatch(req.supabase, masters, first, form?.customer ?? null),
+      ...rest.map((bill) => toVoicePatch(req.supabase, masters, bill, null)),
+    ]);
     const extraDrafts: { id: string; title: string }[] = [];
-    for (const bill of rest) {
-      const extraPatch = await toVoicePatch(req.supabase, bill, null);
+    for (const extraPatch of extraPatches) {
       const draft = toDraftFromPatch(extraPatch, today);
       const title = draft.customer?.name ?? extraPatch.customer?.spokenName ?? "";
       const { data } = await req.supabase
@@ -71,7 +78,8 @@ export async function POST(request: Request) {
         .single();
       if (data) extraDrafts.push({ id: data.id, title });
     }
-    return reply({ ok: true, transcript, patch, extraDrafts });
+    console.info(`[voice/free] stt ${tStt - t0}ms · agent ${tAgent - tStt}ms · match ${Date.now() - tAgent}ms`);
+    return reply({ ok: true, transcript, patch: patch!, extraDrafts });
   } catch (e) {
     console.error("billing agent failed", e instanceof Error ? e.message : e);
     return reply({ ok: false, error: "agent_failed", message: "Couldn't understand the bill — try again or type it.", transcript }, 502);

@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { runBillingAgent, type BillExtraction } from "../src/modules/billing/agent";
+import type { MasterLists } from "../src/modules/billing/prompt";
 
 type Item = { id: string; name: string; name_ta: string | null; aliases?: string[]; unit?: string; default_rate?: number };
 type Expected = {
@@ -27,34 +28,16 @@ const set = JSON.parse(readFileSync(new URL("../src/modules/billing/evals/billin
 };
 const { values } = parseArgs({ options: { only: { type: "string" } } });
 
-function score(row: Item, q: string) {
-  const query = q.toLowerCase().trim();
-  const names = [row.name, row.name_ta ?? "", ...(row.aliases ?? [])].map((n) => n.toLowerCase());
-  if (names.some((n) => n === query)) return 1;
-  if (names.some((n) => n && (n.includes(query) || query.includes(n)))) return 0.8;
-  const words = query.split(/\s+/);
-  return names.some((n) => words.some((w) => w.length > 2 && n.includes(w))) ? 0.5 : 0;
-}
-
-// Minimal stand-in for the Supabase client: only the read RPCs the agent's tools call.
-const fakeSupabase = {
-  rpc: async (fn: string, args: { q: string }) => {
-    const rows = fn === "search_products" ? set.products : set.customers;
-    const data = rows
-      .map((r) => ({ ...r, score: score(r, args.q) }))
-      .filter((r) => r.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
-    return { data, error: null };
-  },
+// The same short refs the app gives the agent ("i1", "c1").
+const masters: MasterLists = {
+  items: set.products.map((p, i) => ({ ref: `i${i + 1}`, id: p.id, name: p.name, nameTa: p.name_ta, aliases: p.aliases ?? [], unit: p.unit ?? null })),
+  customers: set.customers.map((c, i) => ({ ref: `c${i + 1}`, id: c.id, name: c.name, nameTa: c.name_ta })),
 };
-
-const productName = (id: string | null) => set.products.find((p) => p.id === id)?.name ?? null;
-const customerName = (spoken: string | null) => {
+const productName = (ref: string | null) => masters.items.find((p) => p.ref === ref)?.name ?? null;
+const customerName = (spoken: string | null, ref: string | null) => {
   if (!spoken) return null;
   if (/^cash$/i.test(spoken)) return "Cash";
-  const best = set.customers.map((c) => ({ c, s: score(c, spoken) })).sort((a, b) => b.s - a.s)[0];
-  return best && best.s > 0 ? best.c.name : spoken;
+  return masters.customers.find((c) => c.ref === ref)?.name ?? spoken;
 };
 
 function check(got: BillExtraction, expect: Expected[], today: string): string[] {
@@ -63,8 +46,8 @@ function check(got: BillExtraction, expect: Expected[], today: string): string[]
   expect.forEach((e, i) => {
     const b = got.bills[i];
     if (!b) return;
-    if ((e.customer ?? null) !== customerName(b.customer_name)) errors.push(`customer: expected ${e.customer}, got ${b.customer_name}`);
-    const items = b.items.map((it) => ({ product: productName(it.product_id), qty: it.qty, rate: it.rate }));
+    if ((e.customer ?? null) !== customerName(b.customer_name, b.customer_ref)) errors.push(`customer: expected ${e.customer}, got ${b.customer_name} (${b.customer_ref})`);
+    const items = b.items.map((it) => ({ product: productName(it.item_ref), qty: it.qty, rate: it.rate }));
     if (items.length !== e.items.length) errors.push(`items: expected ${e.items.length}, got ${items.length} ${JSON.stringify(items)}`);
     e.items.forEach((ei, j) => {
       const g = items[j];
@@ -104,7 +87,7 @@ async function main() {
     try {
       const got = await runBillingAgent({
         key: { apiKey, scope: "platform" },
-        supabase: fakeSupabase as never,
+        masters,
         transcript: c.said,
         currentForm: c.form ?? null,
         today,
