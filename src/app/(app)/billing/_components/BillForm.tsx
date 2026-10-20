@@ -160,6 +160,16 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   }
 
   async function addProduct(p: ProductHit, fromVoice = false, qty: number | null = null) {
+    // Saying an item that is already on the bill adds to that line instead of a second line.
+    const existing = fromVoice ? draftRef.current.lines.find((l) => l.productId === p.id) : undefined;
+    if (existing) {
+      const before = Number(existing.qty) || 0;
+      const after = Math.round((before + (qty ?? 1)) * 1000) / 1000;
+      withUndo((d) => ({ ...d, lines: d.lines.map((l) => (l.key === existing.key ? { ...l, qty: String(after), confidence: null } : l)) }));
+      setVoiceStatus({ kind: "done", transcript: p.name, chips: [`Already on the bill · qty ${before} → ${after}`] });
+      setTimeout(() => setVoiceStatus((s) => (s?.kind === "done" ? null : s)), 6000);
+      return;
+    }
     const key = crypto.randomUUID();
     const price = await priceFor(p.id, draftRef.current.customer?.id);
     const line: BillLine = {
