@@ -67,7 +67,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   const [restorable, setRestorable] = useState<{ value: BillDraft; at: number } | null>(null);
   const [undoStack, setUndoStack] = useState<BillDraft[]>([]);
   const [customerChoice, setCustomerChoice] = useState<ApplyResult["customerChoice"]>(null);
-  const [productChoice, setProductChoice] = useState<{ spoken: string; candidates: ProductHit[]; qty: number | null } | null>(null);
+  const [productChoices, setProductChoices] = useState<{ id: string; spoken: string; candidates: ProductHit[]; qty: number | null }[]>([]);
   const [unmatched, setUnmatched] = useState<ApplyResult["unmatched"]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [voiceStatus, setVoiceStatus] = useState<{ kind: "busy" } | { kind: "done"; transcript: string; chips: string[] } | { kind: "error"; message: string } | null>(null);
@@ -75,6 +75,12 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   const typed = useRef(new Set<TypedField>());
   const qtyRefs = useRef(new Map<string, HTMLInputElement>());
   const focusLine = useRef<string | null>(null);
+  // Latest draft for async voice handlers. Several item recordings can finish back to back,
+  // before React re-renders, so each must build on the previous one's result.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   const totals = useMemo(() => computeTotals(draft, ctx.businessStateCode), [draft, ctx.businessStateCode]);
   const validation = useMemo(() => validateBill(draft, totals, ctx), [draft, totals, ctx]);
@@ -127,8 +133,11 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     setDraft((d) => ({ ...d, lines: d.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
 
   // Voice changes are undoable as one step each.
-  const withUndo = (next: BillDraft) => {
-    setUndoStack((s) => [...s.slice(-19), draft]);
+  const withUndo = (change: (d: BillDraft) => BillDraft) => {
+    const prev = draftRef.current;
+    const next = change(prev);
+    draftRef.current = next;
+    setUndoStack((s) => [...s.slice(-19), prev]);
     setDraft(next);
   };
   const undo = () => {
@@ -152,8 +161,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
 
   async function addProduct(p: ProductHit, fromVoice = false, qty: number | null = null) {
     const key = crypto.randomUUID();
-    const price = await priceFor(p.id, draft.customer?.id);
-    focusLine.current = key;
+    const price = await priceFor(p.id, draftRef.current.customer?.id);
     const line: BillLine = {
       key,
       productId: p.id,
@@ -166,19 +174,24 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
       rate: price.rate === null ? "" : String(price.rate),
       usualRate: price.usualRate,
     };
-    if (fromVoice) withUndo({ ...draft, lines: [...draft.lines, line] });
-    else setDraft((d) => ({ ...d, lines: [...d.lines, line] }));
-    setAddingItem(false);
-    setProductChoice(null);
+    // Voice keeps the add-item panel open, so the next item can be spoken right away.
+    if (fromVoice) withUndo((d) => ({ ...d, lines: [...d.lines, line] }));
+    else {
+      focusLine.current = key;
+      setDraft((d) => ({ ...d, lines: [...d.lines, line] }));
+      setAddingItem(false);
+    }
   }
 
   async function setCustomer(c: BillCustomer | null, fromVoice = false) {
-    if (fromVoice) withUndo({ ...draft, customer: c });
+    if (fromVoice) withUndo((d) => ({ ...d, customer: c }));
     else update({ customer: c });
     setCustomerChoice(null);
     if (!c?.id) return;
-    const prices = await Promise.all(draft.lines.map((l) => priceFor(l.productId, c.id)));
-    setDraft((d) => ({ ...d, lines: d.lines.map((l, i) => ({ ...l, usualRate: prices[i]?.usualRate ?? null })) }));
+    const lines = draftRef.current.lines;
+    const prices = await Promise.all(lines.map((l) => priceFor(l.productId, c.id)));
+    const usual = new Map(lines.map((l, i) => [l.key, prices[i]?.usualRate ?? null]));
+    setDraft((d) => ({ ...d, lines: d.lines.map((l) => (usual.has(l.key) ? { ...l, usualRate: usual.get(l.key)! } : l)) }));
   }
 
   // ── Field voice handlers: transcript → value by code, no AI ────────────────
@@ -197,7 +210,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     const candidates = await searchByVoice<ProductHit>("products", itemText);
     const pick = confidentPick(candidates);
     if (pick) await addProduct(pick, true, qty);
-    else if (candidates.length) setProductChoice({ spoken: itemText, candidates, qty });
+    else if (candidates.length) setProductChoices((c) => [...c, { id: crypto.randomUUID(), spoken: itemText, candidates, qty }]);
     else {
       setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
       return "Not in the item list · item list-ல இல்லை";
@@ -207,18 +220,18 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   function onLineVoice(key: string) {
     return (text: string) => {
       const command = detectCommand(text);
-      if (command === "delete_last" || command === "cancel") return withUndo({ ...draft, lines: draft.lines.filter((l) => l.key !== key) });
+      if (command === "delete_last" || command === "cancel") return withUndo((d) => ({ ...d, lines: d.lines.filter((l) => l.key !== key) }));
       if (command === "add_item" || command === "next") return setAddingItem(true);
       const parsed = parseLineUtterance(text);
       if (!parsed) return NOT_HEARD;
-      withUndo({
-        ...draft,
-        lines: draft.lines.map((l) =>
+      withUndo((d) => ({
+        ...d,
+        lines: d.lines.map((l) =>
           l.key === key
             ? { ...l, qty: parsed.qty === null ? l.qty : String(parsed.qty), rate: parsed.rate === null ? l.rate : String(parsed.rate), confidence: null }
             : l,
         ),
-      });
+      }));
     };
   }
 
@@ -226,7 +239,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     const date = parseDateUtterance(text, ctx.today);
     if (!date) return NOT_HEARD;
     typed.current.add("invoiceDate");
-    withUndo({ ...draft, invoiceDate: date });
+    withUndo((d) => ({ ...d, invoiceDate: date }));
   }
 
   function onDiscountVoice(text: string) {
@@ -234,14 +247,14 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
     const value = parseAmountUtterance(text.replace(/percent|சதவீதம்|%/gi, " "));
     if (value === null) return NOT_HEARD;
     typed.current.add("discount");
-    withUndo({ ...draft, discount: String(value), discountMode: percent ? "percent" : "amount" });
+    withUndo((d) => ({ ...d, discount: String(value), discountMode: percent ? "percent" : "amount" }));
   }
 
   function onPaymentVoice(text: string) {
     const p = parsePaymentUtterance(text);
     if (!p) return NOT_HEARD;
     typed.current.add("payment");
-    withUndo({ ...draft, payment: p.payment, amountReceived: p.amount !== null ? String(p.amount) : draft.amountReceived });
+    withUndo((d) => ({ ...d, payment: p.payment, amountReceived: p.amount !== null ? String(p.amount) : d.amountReceived }));
   }
 
   // ── Free-form voice: one agent run → form patch ─────────────────────────────
@@ -252,8 +265,8 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
       setVoiceStatus({ kind: "error", message: ("message" in res && res.message) || NOT_HEARD });
       return;
     }
-    const result = applyVoicePatch(draft, res.patch, typed.current);
-    withUndo(result.draft);
+    const result = applyVoicePatch(draftRef.current, res.patch, typed.current);
+    withUndo(() => result.draft);
     setCustomerChoice(result.customerChoice);
     setUnmatched((u) => [...u, ...result.unmatched]);
     setExtraDrafts((d) => [...d, ...res.extraDrafts]);
@@ -518,15 +531,22 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
           );
         })}
 
-        {productChoice && (
-          <VoiceChooser<ProductHit>
-            title={`Which item? “${productChoice.spoken}”${productChoice.qty ? ` · qty ${productChoice.qty}` : ""}`}
-            options={productChoice.candidates}
-            detail={(p) => `${p.nameTa ?? ""} · GST ${p.gstRate}%`}
-            onPick={(p) => addProduct(p, true, productChoice.qty)}
-            onDismiss={() => setProductChoice(null)}
-          />
-        )}
+        {productChoices.map((choice) => {
+          const dismiss = () => setProductChoices((c) => c.filter((x) => x.id !== choice.id));
+          return (
+            <VoiceChooser<ProductHit>
+              key={choice.id}
+              title={`Which item? “${choice.spoken}”${choice.qty ? ` · qty ${choice.qty}` : ""}`}
+              options={choice.candidates}
+              detail={(p) => `${p.nameTa ?? ""} · GST ${p.gstRate}%`}
+              onPick={(p) => {
+                dismiss();
+                void addProduct(p, true, choice.qty);
+              }}
+              onDismiss={dismiss}
+            />
+          );
+        })}
 
         {unmatched.length > 0 && (
           <div className="flex flex-col gap-2 rounded-card border-[1.5px] border-voice bg-warning-container px-4 py-3">
@@ -580,7 +600,7 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
                   onPick={(p) => addProduct(p)}
                 />
               </div>
-              {mic(<FieldMic kind="product" label="item" onText={onProductVoice} />)}
+              {mic(<FieldMic kind="product" label="item" parallel onText={onProductVoice} />)}
             </div>
             <button type="button" onClick={() => setAddingItem(false)} className="mt-2 min-h-11 text-sm font-semibold text-ink-muted">
               Close
