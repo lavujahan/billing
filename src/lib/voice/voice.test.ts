@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseSpokenNumber } from "./numbers";
-import { detectCommand, nameSearchTerms, parseAmountUtterance, parseLineUtterance, splitItemUtterance, parseDateUtterance, parsePaymentUtterance, parseQtyUtterance } from "./parse";
+import { detectCommand, nameSearchTerms, parseAmountUtterance, parseLineUtterance, splitItemList, splitItemUtterance, parseDateUtterance, parsePaymentUtterance, parseQtyUtterance } from "./parse";
 import { tamilToLatin } from "./translit";
 
 test("transliteration", () => {
@@ -83,6 +83,16 @@ test("add-item utterance: item and quantity, rate ignored", () => {
   assert.deepEqual(splitItemUtterance("TMT rod 12mm 4"), { itemText: "TMT rod 12mm", qty: 4, unit: null });
   assert.deepEqual(splitItemUtterance("சிமெண்ட்"), { itemText: "சிமெண்ட்", qty: null, unit: null });
   assert.deepEqual(splitItemUtterance("a cement bag"), { itemText: "a cement", qty: null, unit: "bag" });
+});
+
+test("several items in one recording", () => {
+  const items = (t: string) => splitItemList(t).map((s) => [s.itemText, s.qty]);
+  assert.deepEqual(items("பத்து மூட்டை சிமெண்ட் பத்து மூட்டை சிமெண்ட்"), [["சிமெண்ட்", 10], ["சிமெண்ட்", 10]]);
+  assert.deepEqual(items("பத்து மூட்டை சிமெண்ட் அஞ்சு கிலோ கம்பி"), [["சிமெண்ட்", 10], ["கம்பி", 5]]);
+  assert.deepEqual(items("cement 10 bag kambi 5 kg"), [["cement", 10], ["kambi", 5]]);
+  assert.deepEqual(items("சிமெண்ட் பத்து மூட்டை"), [["சிமெண்ட்", 10]]);
+  assert.deepEqual(items("10 bag cement 450"), [["cement", 10]]);
+  assert.deepEqual(items("TMT rod 12mm 4"), [["TMT rod 12mm", 4]]);
 });
 
 test("amounts", () => {

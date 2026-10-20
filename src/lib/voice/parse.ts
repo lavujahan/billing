@@ -58,7 +58,40 @@ export function splitItemUtterance(transcript: string): { itemText: string; qty:
   return { itemText: words.slice(lead, trail).join(" "), qty: qty && qty > 0 ? qty : null, unit };
 }
 
-const RATE_WORD = /\b(rate|reet|vilai|velai|price)\b|ரேட்|விலை/i;
+// One recording may name several items: "பத்து மூட்டை சிமெண்ட் அஞ்சு கிலோ கம்பி", or the same one
+// twice. Split where a quantity starts a new item (or, for "cement 10 bag kambi 5 kg", where an
+// item follows a quantity), but only into pieces that each have item words and a number, so
+// numbers inside a name ("PVC pipe 1 inch") stay put.
+export function splitItemList(transcript: string): ReturnType<typeof splitItemUtterance>[] {
+  const words = transcript.replace(/[,.]/g, " ").trim().split(/\s+/).filter(Boolean);
+  const kind = (w: string) => (unitOf(w) ? "unit" : /^a$/i.test(w) || parseSpokenNumber(w) === null ? "word" : "num");
+  const kinds = words.map(kind);
+  const qtyFirst = kinds[0] !== "word";
+
+  const pieces: number[][] = [];
+  let current: number[] = [];
+  words.forEach((_, i) => {
+    const prev = kinds[i - 1];
+    const boundary = i > 0 && (qtyFirst ? prev === "word" && kinds[i] !== "word" : prev !== "word" && kinds[i] === "word");
+    if (boundary) {
+      pieces.push(current);
+      current = [];
+    }
+    current.push(i);
+  });
+  pieces.push(current);
+
+  const complete = (p: number[]) => p.some((i) => kinds[i] === "word") && p.some((i) => kinds[i] === "num");
+  const merged: number[][] = [];
+  for (const p of pieces) {
+    const last = merged.at(-1);
+    if (last && (!complete(p) || !complete(last))) last.push(...p);
+    else merged.push([...p]);
+  }
+  return merged.map((p) => splitItemUtterance(p.map((i) => words[i]).join(" ")));
+}
+
+const RATE_WORD =/\b(rate|reet|vilai|velai|price)\b|ரேட்|விலை/i;
 
 // One item-card utterance → qty and/or rate. A unit word or "rate" separates the two:
 // "10 bag 450", "பத்து மூட்டை rate நானூத்தி அம்பது", "rate 460", "12".

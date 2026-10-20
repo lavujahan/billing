@@ -24,6 +24,7 @@ import {
   parseDateUtterance,
   parseLineUtterance,
   parsePaymentUtterance,
+  splitItemList,
   splitItemUtterance,
 } from "@/lib/voice/parse";
 import { confidentPick, mergeByBestScore } from "@/lib/voice/pick";
@@ -213,18 +214,28 @@ export function BillForm({ businessName, ctx, initial, draftId: initialDraftId, 
   }
 
   // Item and quantity come from speech; the rate always comes from the master (customer's last rate, else item rate).
+  // One recording can name several items; a split is kept only if every piece finds an item.
   async function onProductVoice(text: string) {
     if (detectCommand(text) === "cancel") return setAddingItem(false);
-    const { itemText, qty } = splitItemUtterance(text);
-    if (!itemText) return NOT_HEARD;
-    const candidates = await searchByVoice<ProductHit>("products", itemText);
-    const pick = confidentPick(candidates);
-    if (pick) await addProduct(pick, true, qty);
-    else if (candidates.length) setProductChoices((c) => [...c, { id: crypto.randomUUID(), spoken: itemText, candidates, qty }]);
-    else {
-      setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
-      return "Not in the item list · item list-ல இல்லை";
+    let pieces = splitItemList(text).filter((p) => p.itemText);
+    if (!pieces.length) return NOT_HEARD;
+    let found = await Promise.all(pieces.map((p) => searchByVoice<ProductHit>("products", p.itemText)));
+    if (pieces.length > 1 && found.some((c) => !c.length)) {
+      pieces = [splitItemUtterance(text)];
+      found = [await searchByVoice<ProductHit>("products", pieces[0]!.itemText)];
     }
+    let problem: string | undefined;
+    for (const [i, { itemText, qty }] of pieces.entries()) {
+      const candidates = found[i]!;
+      const pick = confidentPick(candidates);
+      if (pick) await addProduct(pick, true, qty);
+      else if (candidates.length) setProductChoices((c) => [...c, { id: crypto.randomUUID(), spoken: itemText, candidates, qty }]);
+      else {
+        setUnmatched((u) => [...u, { spoken: itemText, qty, rate: null }]);
+        problem = "Not in the item list · item list-ல இல்லை";
+      }
+    }
+    return problem;
   }
 
   function onLineVoice(key: string) {
