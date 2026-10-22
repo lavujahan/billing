@@ -6,12 +6,13 @@ import type { ResolvedKey } from "./keys";
 export const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-transcribe";
 export const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 
-export type FieldKind = "customer" | "vendor" | "product" | "qty" | "amount" | "date" | "payment" | "bill";
+export type FieldKind = "customer" | "vendor" | "product" | "alias" | "qty" | "amount" | "date" | "payment" | "bill";
 
 const HINTS: Record<FieldKind, string> = {
   customer: "Shop or person name, Tamil or English. ",
   vendor: "Supplier or company name, Tamil or English. ",
   product: "Item name in a shop with an optional quantity, Tamil or English, e.g. பத்து மூட்டை சிமெண்ட், 5 கம்பி, cement 10 bag. ",
+  alias: "The name of one shop item as customers say it, in Tamil or English, no quantity. Write Tamil words in Tamil script, e.g. கம்பி, சிமெண்ட், kambi, rod. ",
   qty: "A quantity with unit, e.g. பத்து மூட்டை, 10 bag, ரெண்டரை கிலோ. ",
   amount: "A rupee amount in Tamil or English words or digits, e.g. நானூத்தி அம்பது, 450, 3.5k. ",
   date: "A date, e.g. இன்னைக்கு, நேத்து, 15th October. ",

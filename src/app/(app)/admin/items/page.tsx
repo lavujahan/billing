@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Page, PageTitle } from "@/components/layout/Page";
 import { Card, SectionHeading } from "@/components/ui/Card";
+import { resolveOpenAIKey } from "@/lib/ai/keys";
 import { getCurrentUser } from "@/lib/auth/session";
 import { formatINR } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
@@ -15,9 +16,10 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
 
   let query = supabase.from("products").select("id, name, name_ta, aliases, unit, default_rate, gst_rate, hsn_code, active").order("name");
   if (q) query = query.or(`name.ilike.%${q}%,name_ta.ilike.%${q}%`);
-  const [{ data: items }, { data: biz }] = await Promise.all([
+  const [{ data: items }, { data: biz }, aiKey] = await Promise.all([
     query.limit(500),
     supabase.from("businesses").select("gst_slabs").eq("id", user.businessId).single(),
+    resolveOpenAIKey(user.businessId),
   ]);
   const editing = typeof sp.edit === "string" ? (items ?? []).find((i) => i.id === sp.edit) ?? null : null;
   const slabs = (biz?.gst_slabs ?? [0, 5, 12, 18, 28]).map(Number);
@@ -81,7 +83,13 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/item
         </section>
         <section className="flex flex-col gap-2">
           <SectionHeading title={editing ? `Edit · ${editing.name}` : "Add item · புது பொருள்"} />
-          <ItemForm item={editing as ItemValues | null} slabs={slabs} request={request} />
+          <ItemForm
+            key={editing?.id ?? request?.id ?? "new"}
+            item={editing as ItemValues | null}
+            slabs={slabs}
+            request={request}
+            voiceEnabled={Boolean(aiKey)}
+          />
         </section>
       </div>
     </Page>

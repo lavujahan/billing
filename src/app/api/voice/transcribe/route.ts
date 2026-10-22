@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { transcribe, type FieldKind } from "@/lib/ai/transcribe";
 import { readVoiceRequest, vocabulary } from "@/lib/voice/server";
 
-const KINDS: FieldKind[] = ["customer", "vendor", "product", "qty", "amount", "date", "payment"];
+const KINDS: FieldKind[] = ["customer", "vendor", "product", "alias", "qty", "amount", "date", "payment"];
 
 // Field voice: one short recording → text. Parsing into a value happens in the browser, in code.
 export async function POST(request: Request) {
